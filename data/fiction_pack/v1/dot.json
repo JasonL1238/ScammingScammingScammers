@@ -1,0 +1,26 @@
+{
+  "persona_id": "dot",
+  "full_name": "Malcolm Fenwick",
+  "age": 77,
+  "date_of_birth": "06 September 1949",
+  "street": "7842 Corbett Hollow Road",
+  "city": "Dayton",
+  "state": "OH",
+  "postal_code": "45402",
+  "phone": "(823) 555-0182",
+  "email": "malcolm.fenwick@example.com",
+  "bank_name": "Old Harbour Thrift & Loan",
+  "routing_number": "970324891",
+  "account_number": "15063613",
+  "card_number": "4716 8896 4415 9167",
+  "card_expiry": "04/28",
+  "card_cvv": "159",
+  "ssn": "918-89-2831",
+  "relatives": {
+    "son": "Walter Fenwick",
+    "grandson": "Kevin",
+    "granddaughter": "Gladys",
+    "late spouse": "Albert"
+  },
+  "pack_version": "v1"
+}

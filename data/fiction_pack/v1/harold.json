@@ -1,0 +1,26 @@
+{
+  "persona_id": "harold",
+  "full_name": "Sharon Hollingsworth",
+  "age": 84,
+  "date_of_birth": "19 March 1942",
+  "street": "7858 Old Thimble Lane",
+  "city": "Dayton",
+  "state": "OH",
+  "postal_code": "45402",
+  "phone": "(348) 555-0126",
+  "email": "sharon.hollingsworth@example.com",
+  "bank_name": "Old Harbour Thrift & Loan",
+  "routing_number": "999096704",
+  "account_number": "119624608",
+  "card_number": "6011 6692 8175 5475",
+  "card_expiry": "05/26",
+  "card_cvv": "940",
+  "ssn": "937-37-8432",
+  "relatives": {
+    "son": "Malcolm Hollingsworth",
+    "grandson": "Kevin",
+    "granddaughter": "Nadine",
+    "late spouse": "Doris"
+  },
+  "pack_version": "v1"
+}

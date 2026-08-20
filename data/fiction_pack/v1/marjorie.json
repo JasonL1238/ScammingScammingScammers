@@ -1,0 +1,26 @@
+{
+  "persona_id": "marjorie",
+  "full_name": "Sharon Ashby",
+  "age": 85,
+  "date_of_birth": "19 September 1941",
+  "street": "5644 Marlowe Pemberton Drive",
+  "city": "Bakersfield",
+  "state": "CA",
+  "postal_code": "93301",
+  "phone": "(402) 555-0171",
+  "email": "sharon.ashby@example.com",
+  "bank_name": "Old Harbour Thrift & Loan",
+  "routing_number": "322006279",
+  "account_number": "3451041337",
+  "card_number": "5427 2814 7948 4360",
+  "card_expiry": "04/27",
+  "card_cvv": "924",
+  "ssn": "923-97-5176",
+  "relatives": {
+    "son": "Gladys Ashby",
+    "grandson": "Trevor",
+    "granddaughter": "Sharon",
+    "late spouse": "Doris"
+  },
+  "pack_version": "v1"
+}

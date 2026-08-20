@@ -1,0 +1,44 @@
+id: harold
+display_name: Harold
+description: >
+  Chatty widower who hijacks every question with a story. Strongest against scripts
+  that need patient step-by-step cooperation — tech support especially, where the
+  caller must keep him on task and simply cannot.
+
+voice:
+  tts: cartesia
+  # Cartesia "Griffin - Narrator": plainly an elderly male, built for narration, which
+  # is what Harold's turns amount to.
+  voice_id: c99d36f3-5ffd-4253-803a-535c1bc9c306
+  # NOT APPLIED YET — see VoiceConfig.speed.
+  speed: normal
+
+sound_pack:
+  fillers:
+    - "well_now.wav"
+    - "hold_on_son.wav"
+    - "throat_clear.wav"
+  holds:
+    - "footsteps_away.wav"
+    - "door_and_dog.wav"
+  ambient: "radio_talk_bed.wav"
+
+pacing:
+  # Harold is not slow, he is long. Short delay before speaking, long turns after.
+  reply_delay_ms_mean: 600
+  reply_delay_ms_stdev: 250
+  hold_probability: 0.08
+  hold_seconds_min: 10
+  hold_seconds_max: 60
+  # Harold talks over people more than the others do. NOT APPLIED YET — barge-in is
+  # disabled; see Pacing.ignore_interruption_probability.
+  ignore_interruption_probability: 0.35
+
+tactics:
+  tangent: 0.45
+  eager_nonconvergence: 0.15
+  tech_illiteracy: 0.15
+  fumble_data: 0.10
+  read_back: 0.05
+  mishear: 0.05
+  hold_on: 0.05

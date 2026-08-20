@@ -1,0 +1,94 @@
+# One VM, one stack. At the volume this system sees — a handful of calls a day at
+# the very most — splitting these across hosts would add failure modes without
+# adding capacity.
+#
+# Only two things are meant to be reachable from the public internet: the Twilio
+# webhooks and the media-stream WebSocket. The dashboard holds recordings of real
+# people and is bound to the tailnet instead.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ssscammers
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ssscammers}
+      POSTGRES_DB: ssscammers
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Applied in filename order on first boot.
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ssscammers"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  agent:
+    build:
+      context: .
+      dockerfile: docker/agent.Dockerfile
+    # Long-lived WebSockets carrying realtime audio. A stalled event loop is
+    # audible, so this process does no blocking work and no heavy lifting.
+    # One worker, always: the concurrency cap and the live-call registry are in
+    # process memory, so a second worker would answer calls the first cannot see.
+    command: ["python", "-m", "ssscammers.agent", "--port", "8080"]
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Loopback only. Caddy terminates TLS and is the sole public entrypoint; binding
+    # 0.0.0.0 here would expose the media socket's path token in cleartext and publish
+    # /healthz to anyone, while the dashboard next door is carefully bound to loopback.
+    ports:
+      - "127.0.0.1:8080:8080"
+    # The daily minute/spend/repeat-caller counters (see ssscammers/agent/daily_ledger.py).
+    # A named volume, not the container filesystem: `restart: unless-stopped` survives a
+    # crash, but `up -d --build` recreates this container, and the counters living in its
+    # writable layer would reset on every deploy. That is the thing the ledger exists to
+    # survive — a limit cleared by the routine operation is not a limit.
+    volumes:
+      - agentstate:/var/lib/ssscammers
+    # Deploys drop every call in flight — Twilio's <Connect><Stream> does not
+    # reconnect. Drain rather than kill, and avoid deploying while a call is up.
+    stop_grace_period: 120s
+    restart: unless-stopped
+
+  enrichment:
+    build:
+      context: .
+      dockerfile: docker/agent.Dockerfile
+    command: ["python", "-m", "ssscammers.enrichment.worker"]
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: ./dashboard
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Bound to loopback on purpose. Reach it over Tailscale; do not publish it.
+    ports:
+      - "127.0.0.1:3000:3000"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    depends_on: [agent]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  caddydata:
+  agentstate:
