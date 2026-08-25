@@ -31,7 +31,7 @@ Every open item from the survey of the repo, lettered so phases can reference th
 | D | Dashboard — Next.js, Tailscale-private | compose declares the service; the directory does not exist |
 | E | MONITOR guardrail layer | G-5, G-7, G-8, G-9, G-10, G-19 are PROMPT-only ([`guardrails.md`](guardrails.md)) |
 | F | Cancellation-safe turn executor, then barge-in | `should_interrupt=False` at [`media.py:387`](../ssscammers/agent/media.py) — M2's unmet exit criterion |
-| G | `NOTICE_AUDIO_URL` runtime monitoring | boot check validates URL shape only; a 404-at-call-time clip records people with no notice |
+| G | `NOTICE_AUDIO_URL` runtime monitoring | boot fetch + interval re-probe with text degradation and ntfy alerting landed at T1.4; residual window is one probe interval |
 | H | Screening v2 (M3), rescoped to Twilio | deterministic triage only |
 | I | Strategy engine (M4) | static YAML tactic weights; frustration machinery tested but unreachable |
 | J | Intelligence layer (M5), rescoped to the legal boundary | nothing built |
@@ -146,7 +146,7 @@ CI configuration in the repo** despite `legal.md` and `guardrails.md` claiming
 CI-enforced gates (closed at T1.1); migrations apply only via initdb on a fresh volume,
 so the first post-deploy schema change would be an emergency; and a `NOTICE_AUDIO_URL`
 that is fetchable at boot but 404s at call time records real people with no notice — a
-legal-notice hole, today.
+legal-notice hole (closed at T1.4; the residual exposure is one probe interval).
 
 **Key moves.**
 - Stand up merge-blocking CI: full pytest suite via the project venv plus

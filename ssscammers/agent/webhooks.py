@@ -43,6 +43,8 @@ from twilio.request_validator import RequestValidator
 
 from ssscammers.agent import twiml
 from ssscammers.agent.daily_ledger import DailyLedger
+from ssscammers.agent.notice import NoticeHealth
+from ssscammers.agent.notify import notifier_from_settings
 from ssscammers.agent.persona import load_persona
 from ssscammers.agent.registry import CallRegistry
 from ssscammers.agent.triage import AllowlistCache
@@ -130,8 +132,11 @@ class TwilioRestRecorder:
     Not the Twilio SDK client: it is synchronous, and a blocking HTTP call on this event
     loop is audible on every call in flight.
 
-    This is the only outward HTTP request the system makes, and it acts on a call the
-    caller already opened — it cannot originate contact (G-1).
+    One of the system's three outward HTTP surfaces (the others are the notice-clip
+    probe and the operator alert — :mod:`ssscammers.agent.notice`,
+    :mod:`ssscammers.agent.notify`). The invariant that matters is shared by all
+    three: none of them can originate contact with a caller (G-1) — this one acts
+    only on a call the caller already opened.
     """
 
     def __init__(self, account_sid: str, auth_token: str, *, timeout: float = 5.0) -> None:
@@ -246,6 +251,7 @@ def create_app(
     registry: CallRegistry | None = None,
     allowlist: AllowlistCache | None = None,
     recorder: CallRecorder | None = None,
+    notice_health: NoticeHealth | None = None,
     validate_signatures: bool = True,
 ) -> FastAPI:
     """Build the webhook app.
@@ -277,6 +283,11 @@ def create_app(
     )
     allowlist = allowlist if allowlist is not None else AllowlistCache()
     recorder = recorder or _default_recorder(settings)
+    notice_health = notice_health or NoticeHealth(
+        url=settings.notice_audio_url,
+        notifier=notifier_from_settings(settings),
+        interval_seconds=float(settings.notice_probe_interval_seconds),
+    )
 
     if settings.media_stream_path_token in _PLACEHOLDER_SECRETS:
         raise RuntimeError(
@@ -305,7 +316,32 @@ def create_app(
         enabled=validate_signatures,
     )
 
-    app = FastAPI(title="ssscammers agent", docs_url=None, redoc_url=None, openapi_url=None)
+    @contextlib.asynccontextmanager
+    async def lifespan(_: FastAPI):
+        # The boot fetch: a configured clip is probed before the first webhook is
+        # answered, and re-probed on an interval for as long as the app serves. A
+        # failed boot fetch degrades the notice to the spoken text and alerts — it
+        # does not refuse to boot, because an unanswered webhook is a dropped call
+        # and the text notice is the designed degraded mode, not an outage.
+        probe_task: asyncio.Task[None] | None = None
+        if notice_health.url:
+            await notice_health.check_once()
+            probe_task = asyncio.create_task(notice_health.run())
+        try:
+            yield
+        finally:
+            if probe_task is not None:
+                probe_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await probe_task
+
+    app = FastAPI(
+        title="ssscammers agent",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+        lifespan=lifespan,
+    )
 
     after_stream_url = _absolute(settings.public_base_url, "/twilio/after-stream")
     voicemail_done_url = _absolute(settings.public_base_url, "/twilio/voicemail-complete")
@@ -405,7 +441,9 @@ def create_app(
             twiml.engage(
                 stream_url=settings.media_stream_url,
                 after_stream_url=after_stream_url,
-                notice_audio_url=settings.notice_audio_url,
+                # A memory read: the clip while its probe says it is fetchable,
+                # otherwise "" so twiml.engage speaks the fixed NOTICE_TEXT (G-2).
+                notice_audio_url=notice_health.current_url(),
                 parameters={
                     "call_sid": call_sid,
                     "persona_id": settings.default_persona,
@@ -545,6 +583,11 @@ def create_app(
             "enabled": registry.enabled,
             "active_calls": registry.active_count,
             "capacity": registry.max_concurrent,
+            "notice_clip": (
+                "unconfigured"
+                if not notice_health.url
+                else ("healthy" if notice_health.healthy else "degraded")
+            ),
         }
 
     return app

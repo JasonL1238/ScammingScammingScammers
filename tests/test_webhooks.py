@@ -18,6 +18,7 @@ from starlette.websockets import WebSocketDisconnect
 from twilio.request_validator import RequestValidator
 
 from ssscammers.agent import webhooks
+from ssscammers.agent.notice import NoticeHealth
 from ssscammers.agent.registry import CallRegistry
 from ssscammers.agent.triage import AllowlistCache
 from ssscammers.shared.config import Settings
@@ -68,6 +69,7 @@ def build(
     registry: CallRegistry | None = None,
     allowlist: AllowlistCache | None = None,
     recorder: StubRecorder | None = None,
+    notice_health: NoticeHealth | None = None,
 ):
     settings = settings or make_settings()
     registry = registry or CallRegistry(max_concurrent=settings.max_concurrent_calls)
@@ -77,6 +79,7 @@ def build(
         registry=registry,
         allowlist=allowlist if allowlist is not None else AllowlistCache(),
         recorder=recorder,
+        notice_health=notice_health,
     )
     return TestClient(app), registry, recorder
 
@@ -569,6 +572,7 @@ class TestHealth:
             "enabled": True,
             "active_calls": 0,
             "capacity": 2,
+            "notice_clip": "unconfigured",
         }
 
     def test_health_reflects_a_live_call(self) -> None:
@@ -616,3 +620,87 @@ class TestADayThatIsOverStillTakesAMessage:
         client, _, _ = build(registry=registry)
         signed_post(client, "/twilio/voice", voice_params())
         assert registry.active_count == 0
+
+
+class TestTheNoticeClipDegradesToTextNeverToSilence:
+    """G-2's runtime half: a clip the probe says is dead must not reach Twilio.
+
+    A `<Play>` Twilio cannot fetch is logged by Twilio and skipped — the caller is
+    connected and recorded with no notice. While NoticeHealth reports the clip
+    unhealthy, the engage document must open with the spoken NOTICE_TEXT instead.
+    """
+
+    CLIP = "https://cdn.example/notice.wav"
+
+    def build_with_notice(self, *, healthy: bool):
+        health = NoticeHealth(url=self.CLIP, healthy=healthy)
+        client, registry, recorder = build(
+            settings=make_settings(notice_audio_url=self.CLIP), notice_health=health
+        )
+        return client, health
+
+    def first_verb(self, response):
+        root = ElementTree.fromstring(response.text)
+        return list(root)[0]
+
+    def test_a_healthy_clip_is_played(self) -> None:
+        client, _ = self.build_with_notice(healthy=True)
+        response = signed_post(client, "/twilio/voice", voice_params())
+        first = self.first_verb(response)
+        assert first.tag == "Play"
+        assert first.text == self.CLIP
+
+    def test_a_degraded_clip_becomes_the_spoken_notice(self) -> None:
+        from ssscammers.agent.twiml import NOTICE_TEXT
+
+        client, _ = self.build_with_notice(healthy=False)
+        response = signed_post(client, "/twilio/voice", voice_params())
+        first = self.first_verb(response)
+        assert first.tag == "Say"
+        assert first.text == NOTICE_TEXT
+        assert "Play" not in verbs(response)
+
+    def test_recovery_restores_the_clip_without_a_restart(self) -> None:
+        client, health = self.build_with_notice(healthy=False)
+        health.healthy = True
+        response = signed_post(client, "/twilio/voice", voice_params())
+        assert self.first_verb(response).tag == "Play"
+
+    def test_healthz_reports_the_notice_state(self) -> None:
+        client, health = self.build_with_notice(healthy=False)
+        assert client.get("/healthz").json()["notice_clip"] == "degraded"
+        health.healthy = True
+        assert client.get("/healthz").json()["notice_clip"] == "healthy"
+
+    def test_healthz_says_unconfigured_when_no_clip_is_set(self) -> None:
+        client, _, _ = build()
+        assert client.get("/healthz").json()["notice_clip"] == "unconfigured"
+
+    def test_the_lifespan_probes_at_boot_and_degrades_on_a_404(self) -> None:
+        # The Phase 1 exit criterion as one composition: an injected 404 yields a
+        # NOTICE_TEXT first verb *plus* a fired alert.
+        import httpx
+
+        from ssscammers.agent.twiml import NOTICE_TEXT
+
+        class RecordingNotifier:
+            def __init__(self) -> None:
+                self.alerts: list[str] = []
+
+            async def send(self, title: str, body: str) -> bool:
+                self.alerts.append(title)
+                return True
+
+        notifier = RecordingNotifier()
+        health = NoticeHealth(url=self.CLIP, notifier=notifier)
+        health._transport = httpx.MockTransport(lambda request: httpx.Response(404))
+        client, _, _ = build(
+            settings=make_settings(notice_audio_url=self.CLIP), notice_health=health
+        )
+        with client:  # entering the context runs the lifespan → the boot fetch
+            response = signed_post(client, "/twilio/voice", voice_params())
+            first = self.first_verb(response)
+            assert first.tag == "Say"
+            assert first.text == NOTICE_TEXT
+            assert client.get("/healthz").json()["notice_clip"] == "degraded"
+        assert notifier.alerts == ["Notice clip unreachable"]

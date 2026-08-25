@@ -23,10 +23,11 @@ model-backed half is pending. So wherever MONITOR appears it is *planned*, and:
   is no out-of-band second opinion on either.
 
 The guardrails that protect a real caller are CODE: G-1, G-11, G-12, G-13, G-14, G-16 are
-built and none depends on the watchdog. G-2 is CODE but **partial** — see its row for the
-one hole (an unfetchable `NOTICE_AUDIO_URL` makes Twilio skip the `<Play>` and record with
-no notice), which is a real gap, not a formality. Closing the MONITOR column is what
-building G-17 means.
+built and none depends on the watchdog. G-2 is CODE and monitored — an unfetchable
+`NOTICE_AUDIO_URL` is caught by a boot fetch and an interval re-probe that degrade the
+notice to the fixed spoken line; the residual exposure is the one probe interval between
+a clip dying and the next probe noticing (see its row). Closing the MONITOR column is
+what building G-17 means.
 
 Status is honest: **built** means implemented and tested today; **pending** means the
 design is settled but the code is not written.
@@ -34,7 +35,7 @@ design is settled but the code is not written.
 | # | Guardrail | Layer | Status | Where |
 |---|---|---|---|---|
 | G-1 | No outbound calls or texts, ever | CODE | **built** | Twilio subaccount with outbound disabled; [`test_no_outbound.py`](../tests/test_no_outbound.py) greps the package for call/message creation and for `<Dial>`, and asserts the one REST endpoint used takes a call SID as a path segment |
-| G-2 | Recorded-line notice plays before any agent speech | CODE | partial | [`twiml.py`](../ssscammers/agent/twiml.py) — `engage()` cannot be constructed without a notice and emits it as the first verb; recording starts *before* it plays, so the notice is inside the audio. The voicemail documents carry the notice in their own prompt, since those paths never call `engage()`. **Gap:** a `NOTICE_AUDIO_URL` that is well-formed but unfetchable makes Twilio log the failed `<Play>` and continue to the next verb — boot-time validation catches a malformed URL, nothing catches a 404 |
+| G-2 | Recorded-line notice plays before any agent speech | CODE | **built** | [`twiml.py`](../ssscammers/agent/twiml.py) — `engage()` cannot be constructed without a notice and emits it as the first verb; recording starts *before* it plays, so the notice is inside the audio. The voicemail documents carry the notice in their own prompt, since those paths never call `engage()`. An unfetchable `NOTICE_AUDIO_URL` is caught by [`notice.py`](../ssscammers/agent/notice.py)'s boot fetch and interval re-probe — while the clip is unreachable the engage document opens with the fixed spoken line, with an alert on each transition. **Residual window:** a clip that dies between probes reaches Twilio until the next probe (one `NOTICE_PROBE_INTERVAL_SECONDS`) |
 | G-3 | No real personal data is ever spoken | CODE (+ MONITOR planned) | **built** as CODE | [`output_filter.py`](../ssscammers/shared/output_filter.py) denylist; [`fiction.py`](../ssscammers/shared/fiction.py) is the only source of "personal" detail |
 | G-4 | No usable financial instrument is ever spoken | CODE (+ MONITOR planned) | **built** as CODE | Luhn / ABA / SSN-range checks in [`validators.py`](../ssscammers/shared/validators.py), enforced pre-TTS |
 | G-5 | Never completes a transaction or verification | PROMPT + MONITOR | partial | [`core_rules.md`](../playbooks/core_rules.md); model-side eval pending |

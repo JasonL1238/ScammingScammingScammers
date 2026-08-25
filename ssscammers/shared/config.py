@@ -109,6 +109,13 @@ class Settings:
     consent record; it is not allowed to depend on an asset being uploaded.
     """
 
+    notice_probe_interval_seconds: int = 60
+    """How often :class:`ssscammers.agent.notice.NoticeHealth` re-probes the clip.
+
+    Bounds the window in which a clip that died after boot can still be handed to
+    Twilio — during that window callers are connected and recorded with no audible
+    notice, which is the G-2 hole the probe exists to close."""
+
     default_persona: str = "marjorie"
     """Which character answers. Chosen at admission so the whole call is one persona."""
 
@@ -152,6 +159,13 @@ class Settings:
     """**Not used yet.** Nothing reads this: the persistence layer is scheduled
     roadmap work and nothing imports a database driver today. Kept loaded so the
     seam stays on record."""
+
+    # --- Notifications. Values only: the HTTP client lives in agent/notify.py,
+    # because this module must stay importable with zero third-party packages. ---
+    ntfy_base_url: str = "https://ntfy.sh"
+    ntfy_topic: str = ""
+    """Empty disables alerting entirely (a NullNotifier is used)."""
+    ntfy_token: str = ""
 
     # --- Owner identity. Real values; the filter blocks them, never speaks them. ---
     owner_pii_denylist: tuple[str, ...] = ()
@@ -223,6 +237,10 @@ def load_settings() -> Settings:
         public_base_url=_env("PUBLIC_BASE_URL"),
         media_stream_path_token=_env("MEDIA_STREAM_PATH_TOKEN"),
         notice_audio_url=_env("NOTICE_AUDIO_URL"),
+        notice_probe_interval_seconds=_env_number("NOTICE_PROBE_INTERVAL_SECONDS", 60),
+        ntfy_base_url=_env("NTFY_BASE_URL", "https://ntfy.sh") or "https://ntfy.sh",
+        ntfy_topic=_env("NTFY_TOPIC"),
+        ntfy_token=_env("NTFY_TOKEN"),
         default_persona=_env("DEFAULT_PERSONA", "marjorie") or "marjorie",
         voicemail_max_seconds=_env_number("VOICEMAIL_MAX_SECONDS", 120),
         anthropic_api_key=_env("ANTHROPIC_API_KEY"),

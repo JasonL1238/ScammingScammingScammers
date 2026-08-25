@@ -238,6 +238,74 @@ in flight would leave no red evidence. Main never contains the regression.
   dot's `description` field is consumed only by the textloop banner.
 - **Escalations:** none.
 
+### T1.4 — `NOTICE_AUDIO_URL` runtime probe + ntfy alerting
+
+- **Scope:** new `ssscammers/agent/notice.py` (`NoticeHealth`: boot fetch,
+  interval re-probe, transition-only alerting, `current_url()` as the single
+  in-memory call-path read) and `ssscammers/agent/notify.py` (`Notifier`
+  protocol named `send` — the scanner bans `message` — `NtfyNotifier`,
+  `NullNotifier`); Settings gained `NTFY_*` and
+  `NOTICE_PROBE_INTERVAL_SECONDS`; `create_app` gained a lifespan (boot fetch
+  before serving, supervised probe task, cancelled at shutdown) and an
+  injectable `notice_health`; the engage document now reads
+  `notice_health.current_url()`; `/healthz` reports `notice_clip`; ~40 new
+  tests. Boot-fetch failure policy: degrade + alert, keep serving — refusing
+  to boot over a transient fetch failure drops calls, and the spoken text is
+  the designed degraded mode.
+- **Rule 1 review** (two adversaries, cross-refutation, two cascade rounds):
+  - *A-1/B-F1 (converged, survived):* `NOTICE_PROBE_INTERVAL_SECONDS=0`
+    was a measured hot loop (~15k probes/s on the call-serving event loop).
+    **Fixed:** a 5s floor clamped in `__post_init__` with a warning.
+  - *A-2 (survived):* "< 400" called an unfollowable 302 healthy. **Fixed:**
+    strict `is_success`.
+  - *A-3/B-F2 (converged, survived):* a raising notifier killed the probe
+    loop — a dead watchdog indistinguishable from a healthy clip. **Fixed:**
+    alerts routed through a guarded `_alert`; proven by an
+    exploding-notifier test.
+  - *A-4 → B's overturn (the round's best catch):* the first fix
+    blacklisted `text/*` but kept missing/octet-stream content types
+    healthy, on A's "headerless CDNs serve playable clips" argument. B
+    refuted it with Twilio's own documentation — `<Play>` enforces an
+    explicit ten-type MIME allowlist and error 13325 fires on invalid *or
+    missing* Content-Type; no sniffing — making the carve-out a false-green
+    (an R2/S3 bucket with default `application/octet-stream` metadata would
+    probe healthy while every caller was recorded with no notice, with
+    monitoring asserting all-clear). Verified against the live Twilio docs
+    by the coordinator and by A, who formally withdrew its ruling.
+    **Fixed:** the probe now applies exactly Twilio's documented allowlist,
+    so it can never false-alarm on a clip Twilio would play; tests
+    inverted, plus a loop proving all ten documented types (with
+    parameters, any case) stay healthy.
+  - *A-5 (survived):* httpx timeouts bound socket operations, not requests —
+    a trickling host held the boot fetch (which runs before serving) for
+    unbounded wall clock, measured 8.1s+ per byte-rate. **Fixed:**
+    `asyncio.wait_for(timeout×3)` inside `check_once`; tripping it is
+    doubt, and doubt degrades to text.
+  - *B-F3 (survived):* four docs falsified by this diff (README notice
+    paragraph, `guardrails.md` G-2 preamble + row, roadmap workstream G row
+    and Phase 1 goal). **Fixed** under the settled factual-state policy;
+    G-2's status upgraded to **built** with the residual one-interval
+    window named in bold in the row — B ruled the upgrade honest since the
+    window is an inherent property of polling, disclosed where the status
+    is read.
+  - *B-F4 (survived):* the exit criterion is now one literal composition —
+    the lifespan e2e asserts 404 → `<Say>` `NOTICE_TEXT` first verb +
+    healthz `degraded` + exactly one fired alert, and no spurious alert at
+    shutdown.
+  - Dropped with reasons recorded: per-send-httpx-client duplication (below
+    useful altitude at three divergent sites), probe-then-sleep ordering
+    (boot fetch already probed once), `application/json` degradation
+    (subsumed by the allowlist).
+- **Live demonstration (final code, real process, real sockets):** boot with
+  `NOTICE_PROBE_INTERVAL_SECONDS=0` and a 404ing clip URL → the clamp
+  warning fires, healthz reports `degraded`, the transition alert is
+  attempted once; creating the clip → the clamped 5s re-probe recovers it
+  (real `http.server` `audio/x-wav` passing the allowlist) → healthz
+  `healthy`, one recovery alert, no repeats.
+- **Verification (final tree):** 603 passed / 2 skipped; textloop
+  `--all-scripts --dry` exit 0; `ruff check .` clean.
+- **Escalations:** none.
+
 ### Phase 1 exit-criteria checklist
 
 From `roadmap.md` Phase 1, read under the recorded direct-to-main decision
@@ -249,8 +317,11 @@ throwaway branches.
   [32897840253](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/32897840253);
   seeded `dial()` red run
   [32898787431](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/32898787431).
-- [ ] An injected 404 yields a `NOTICE_TEXT` first verb plus a fired alert; a
-  healthy re-probe restores the clip.
+- [x] An injected 404 yields a `NOTICE_TEXT` first verb plus a fired alert; a
+  healthy re-probe restores the clip. Evidence: T1.4 — the lifespan e2e test
+  composes all three assertions
+  (`test_the_lifespan_probes_at_boot_and_degrades_on_a_404`), and the live
+  process demonstration reproduced degrade-then-recover over real sockets.
 - [ ] A throwaway `002` migration applies to an existing volume; a deliberate
   mid-list enum insertion fails the revised sync test.
 - [x] PII grep over `.env.example` returns nothing. Evidence: T1.2 —

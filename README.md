@@ -111,13 +111,17 @@ into `personas/<id>/audio/` as **8 kHz mono 16-bit WAV** — that is Twilio's st
 so matching it keeps resampling off the live audio path. A missing clip is logged and
 skipped rather than failing a call.
 
-`NOTICE_AUDIO_URL` is the one asset with no safe fallback at runtime. Leaving it empty is
-fine — a fixed synthesised line is spoken instead. Setting it to a URL Twilio cannot
-fetch is not: Twilio logs the failed `<Play>` and continues to the next verb, so the
-caller would be recorded and connected with no notice at all. The app therefore refuses
-to start on a malformed value, and the voicemail documents state that the call is
-recorded in their own prompt — but a syntactically valid URL that 404s at call time is
-still a gap that only monitoring will catch.
+`NOTICE_AUDIO_URL` is the asset the recording notice depends on. Leaving it empty is
+fine — a fixed synthesised line is spoken instead. A URL Twilio cannot fetch would be
+worse: Twilio logs the failed `<Play>` and continues to the next verb, so the caller
+would be recorded and connected with no notice at all. Three layers close that: the app
+refuses to start on a malformed value; a configured clip is fetched at boot and
+re-probed on an interval (`NOTICE_PROBE_INTERVAL_SECONDS`), and while it is unreachable
+the engage document opens with the spoken line instead — degraded, never absent — with
+an ntfy alert on each transition (when `NTFY_TOPIC` is configured) and the state
+visible at `/healthz` as `notice_clip`.
+The residual window is one probe interval: a clip that dies between probes can still
+reach Twilio until the next probe notices.
 
 ## Safety
 
