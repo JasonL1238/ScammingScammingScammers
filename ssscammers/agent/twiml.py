@@ -151,8 +151,8 @@ def voicemail(
         method="POST",
         max_length=max_length_seconds,
         play_beep=True,
-        # No Twilio transcription: it bills per minute and the enrichment worker
-        # already transcribes everything with a model that reads context.
+        # No Twilio transcription: it bills per minute, and transcription belongs
+        # to the planned enrichment worker, which will read the whole call in context.
         transcribe=False,
         recording_status_callback=recording_status_callback_url or None,
         recording_status_callback_method="POST" if recording_status_callback_url else None,

@@ -26,7 +26,7 @@ Every open item from the survey of the repo, lettered so phases can reference th
 | # | Workstream | Today |
 |---|---|---|
 | A | Postgres persistence — DB-backed event sink + call/caller/turn writers | `LoggingEventSink` only; nothing writes the DB at runtime |
-| B | Recording pipeline — Twilio → content-addressed R2, retention enforced | recordings stay in Twilio; [`legal.md`](legal.md) promises deletion in the present tense with no code behind it |
+| B | Recording pipeline — Twilio → content-addressed R2, retention enforced | recordings stay in Twilio; [`legal.md`](legal.md) records the deletion promise as designed-not-built (re-tensed at T1.3) — the code behind it still does not exist |
 | C | Enrichment worker — Batch-API post-call analysis | compose declares the service; the package does not exist |
 | D | Dashboard — Next.js, Tailscale-private | compose declares the service; the directory does not exist |
 | E | MONITOR guardrail layer | G-5, G-7, G-8, G-9, G-10, G-19 are PROMPT-only ([`guardrails.md`](guardrails.md)) |
@@ -35,7 +35,7 @@ Every open item from the survey of the repo, lettered so phases can reference th
 | H | Screening v2 (M3), rescoped to Twilio | deterministic triage only |
 | I | Strategy engine (M4) | static YAML tactic weights; frustration machinery tested but unreachable |
 | J | Intelligence layer (M5), rescoped to the legal boundary | nothing built |
-| K | Quality-bar infrastructure — replay, goldens, latency SLO, chaos, OTel | test suite is strong but there is **no CI**, no replay of recorded calls, no golden gates |
+| K | Quality-bar infrastructure — replay, goldens, latency SLO, chaos, OTel | test suite is strong; push-gating CI landed at T1.1 — still no replay of recorded calls, no golden gates |
 
 ## Honest rescopes and escalations
 
@@ -141,11 +141,12 @@ them here is the plan; building around them silently would be planning fiction.
 ### Phase 1 — Groundwork: safety hygiene, CI, migration machinery *(G, K, A-prep)*
 
 **Goal.** Close the live gaps that must not wait one more phase, and make every later
-gate real. Three facts force this to the front: there is **no CI configuration in the
-repo** despite `legal.md` and `guardrails.md` claiming CI-enforced gates; migrations
-apply only via initdb on a fresh volume, so the first post-deploy schema change would be
-an emergency; and a `NOTICE_AUDIO_URL` that is fetchable at boot but 404s at call time
-records real people with no notice — a legal-notice hole, today.
+gate real. Three facts forced this to the front: at this plan's writing there was **no
+CI configuration in the repo** despite `legal.md` and `guardrails.md` claiming
+CI-enforced gates (closed at T1.1); migrations apply only via initdb on a fresh volume,
+so the first post-deploy schema change would be an emergency; and a `NOTICE_AUDIO_URL`
+that is fetchable at boot but 404s at call time records real people with no notice — a
+legal-notice hole, today.
 
 **Key moves.**
 - Stand up merge-blocking CI: full pytest suite via the project venv plus

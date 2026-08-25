@@ -3,8 +3,9 @@
 # adding capacity.
 #
 # Only two things are meant to be reachable from the public internet: the Twilio
-# webhooks and the media-stream WebSocket. The dashboard holds recordings of real
-# people and is bound to the tailnet instead.
+# webhooks and the media-stream WebSocket. The dashboard (planned; its directory is
+# not in the repo yet) will hold recordings of real people and is bound to the
+# tailnet instead.
 
 services:
   postgres:
@@ -39,7 +40,8 @@ services:
         condition: service_healthy
     # Loopback only. Caddy terminates TLS and is the sole public entrypoint; binding
     # 0.0.0.0 here would expose the media socket's path token in cleartext and publish
-    # /healthz to anyone, while the dashboard next door is carefully bound to loopback.
+    # /healthz to anyone, while the planned dashboard next door is carefully bound to
+    # loopback.
     ports:
       - "127.0.0.1:8080:8080"
     # The daily minute/spend/repeat-caller counters (see ssscammers/agent/daily_ledger.py).

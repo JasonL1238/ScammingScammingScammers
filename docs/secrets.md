@@ -11,11 +11,14 @@ only in code.
 
 1. **Nothing but `.env.example` is committed.** `.gitignore` excludes `.env` and every
    `.env.*` variant. The example file carries names and shapes, never values.
-2. **Secrets are injected at container start**, from a SOPS-encrypted file or a
-   secrets manager. They are not baked into images and not passed on a command line,
-   where they land in shell history and process listings.
-3. **The media worker never gets an org-scoped credential it doesn't need.** Anything
-   with broad authority stays on the control-plane side; the process that runs
+2. **Secrets must be injected at container start**, from a SOPS-encrypted file or a
+   secrets manager — never baked into images and never passed on a command line,
+   where they land in shell history and process listings. (The container deployment
+   is not built yet; today configuration comes from plain environment variables —
+   nothing in the agent parses a `.env` file.)
+3. **The media worker never gets an org-scoped credential it doesn't need.** Today
+   there is one process and one `.env`; when the stack splits, anything with broad
+   authority belongs on the control-plane side, and the process that runs
    scammer-influenced work gets the narrowest key that does the job.
 
 ## Anthropic specifically

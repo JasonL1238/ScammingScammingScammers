@@ -478,8 +478,9 @@ def create_app(
     async def voicemail_recording_status(request: Request) -> Response:
         params = await checker.form(request)
         # Deliberately not stored against the call: a voicemail is a real person's
-        # message, not part of the bait archive, and retention for the two differs
-        # (see `retention.legit_audio_days` in db/migrations/001_initial.sql).
+        # message, not part of the bait archive, and the declared retention policy for
+        # the two differs (see `retention.legit_audio_days` in
+        # db/migrations/001_initial.sql — not yet enforced by any worker).
         logger.info(
             "voicemail recording %s for call %s: status=%s",
             params.get("RecordingSid", "?"),

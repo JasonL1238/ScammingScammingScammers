@@ -1,9 +1,10 @@
 """The single classification vocabulary.
 
-Three stages of the system label calls, and each once had its own incompatible label set:
-realtime triage, realtime tactic steering, and post-call enrichment. Everything imports
-from here, and the SQL enums in ``db/migrations`` are checked against these values, so a
-label written by the agent is readable by the dashboard without translation.
+Three stages of the system are designed to label calls, and each once had its own
+incompatible label set: realtime triage, realtime tactic steering, and post-call
+enrichment (the third is planned, not built). Everything imports from here, and the SQL
+enums in ``db/migrations`` are checked against these values, so a label written by the
+agent will be readable by the planned dashboard without translation.
 
 Two jobs are deliberately kept apart:
 
@@ -11,8 +12,8 @@ Two jobs are deliberately kept apart:
   live and drives the safety valve — a wrong answer means baiting a real person or letting
   a scammer walk.
 * **Scam type** answers "what kind of scam is this?" The realtime guess only steers tactics
-  and is allowed to be wrong; the authoritative label comes from enrichment, which has the
-  whole transcript and no latency budget.
+  and is allowed to be wrong; the authoritative label will come from planned enrichment,
+  which will have the whole transcript and no latency budget.
 """
 
 from __future__ import annotations
@@ -73,7 +74,8 @@ BAITABLE_TRIAGE: frozenset[TriageClass] = frozenset(
 
 
 class ScamType(StrEnum):
-    """Which script the caller is running. Authoritative value comes from enrichment."""
+    """Which script the caller is running. The authoritative value will come from
+    planned enrichment."""
 
     UNKNOWN = "unknown"
     IRS_TAX = "irs_tax"
@@ -193,7 +195,8 @@ class CallerKind(StrEnum):
 
 
 class Tactic(StrEnum):
-    """Stalling moves. Realtime selection is a hint; enrichment relabels authoritatively."""
+    """Stalling moves. Realtime selection is a hint; planned enrichment will relabel
+    authoritatively."""
 
     NONE = "none"
     MISHEAR = "mishear"

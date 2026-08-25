@@ -15,8 +15,9 @@ voice:
   speed: slow
 
 sound_pack:
-  # Rendered once from this persona's own TTS voice so a filler is indistinguishable
-  # from live speech and costs nothing at call time.
+  # To be rendered once from this persona's own TTS voice so a filler is
+  # indistinguishable from live speech and costs nothing at call time. The clips are
+  # not in the repo; a missing clip degrades to a beat of silence (see media.py).
   fillers:
     - "mm_hold_on.wav"
     - "sorry_dear.wav"

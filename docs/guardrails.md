@@ -47,7 +47,7 @@ design is settled but the code is not written.
 | G-12 | Real emergencies get the 911 redirect, immediately | CODE | **built** | `EMERGENCY_EXIT`; fixed `EMERGENCY_SCRIPT`; scripted fake emergencies excluded |
 | G-13 | Threats end the call without escalation | CODE | **built** | `TERMINATE` with no parting utterance |
 | G-14 | Hard call cap, enforced by timer not by model | CODE | **built** | `hard_cap_seconds` in the state machine |
-| G-15 | Concurrency, daily minutes, and spend caps | CODE | **built** | Concurrency enforced by [`registry.py`](../ssscammers/agent/registry.py); daily minutes, spend, and repeat-caller counters by [`daily_ledger.py`](../ssscammers/agent/daily_ledger.py), persisted to a named volume. Every one of them routes overflow to voicemail, never a rejection |
+| G-15 | Concurrency, daily minutes, and spend caps | CODE | **built** | Concurrency enforced by [`registry.py`](../ssscammers/agent/registry.py); daily minutes, spend, and repeat-caller counters by [`daily_ledger.py`](../ssscammers/agent/daily_ledger.py), persisted to disk with atomic writes (the compose file maps its state directory to a named volume). Every one of them routes overflow to voicemail, never a rejection |
 | G-16 | Dead-air hangup | CODE | **built** | `dead_air_seconds` |
 | G-17 | Persona-break watchdog can stop the call | MONITOR | partial | Deterministic half built into the filter; the model-backed half is pending |
 | G-18 | Truthful AI disclosure only on code-gated triggers | PROMPT + CODE | **built** | Persona-break patterns blocked except in the exit phases |
@@ -160,10 +160,12 @@ worth recording because each looked correct until it was executed:
   (`respond()` is called only on non-empty transcribed text, and `tick()` cannot plan a
   model turn), so this is defence for the day one of them moves.
 - **A model switch cannot be verified by the dry harness.** `textloop --dry` sets
-  `brain=None`, so not one line of `agent/llm.py` executes and its only assertions are
-  state-machine properties that are model-independent by construction. A review claimed
-  the switch was verified on that basis. Request-shape changes are invisible until they
-  are live: run `textloop --script <name>` *without* `--dry`, against a real key.
+  `brain=None`, so none of `agent/llm.py`'s request construction runs — no request is
+  built or sent, though dry runs still import the module and build `Turn`s — and the
+  harness's only assertions are state-machine properties that are model-independent by
+  construction. A review claimed the switch was verified on that basis. Request-shape
+  changes are invisible until they are live: run `textloop --script <name>` *without*
+  `--dry`, against a real key.
 - **A truncated reply was indistinguishable from a clean one.** On `stop_reason:
   "max_tokens"` the stream simply ends, the residual buffer is flushed with no sentence
   terminator, and the fragment is spoken, recorded as the persona's turn, and fed back to
@@ -201,8 +203,9 @@ one line that must never be swallowed.
 
 Machine-checked in CI today: fiction-pack invariants across hundreds of generated
 identities, the filter against spoken-word digit dictation, the state machine's safety
-exits from every phase, every canned misroute script reaching a disclosure within two
-turns, the cross-sentence filter evasion above, and the ingress routing — signature
+exits from every phase, every canned misroute script released within two turns (via
+the disclosure or the emergency redirect, whichever the script demands), the
+cross-sentence filter evasion above, and the ingress routing — signature
 validation, blocklist, allowlist, overflow, kill switch, and the voicemail a released
 caller is promised.
 

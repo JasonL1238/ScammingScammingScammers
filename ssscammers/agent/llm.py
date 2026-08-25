@@ -16,8 +16,10 @@ No sampling parameters (a non-default one is rejected) and no fast mode (Opus-on
 absences are pinned by tests rather than restated here.
 
 Re-run ``textloop --script <name>`` **without** ``--dry`` after any model, effort, or
-prompt change: ``--dry`` sets ``brain=None`` and executes no line of this module. The
-personas are the product and this is the knob most likely to cheapen them.
+prompt change: ``--dry`` sets ``brain=None``, so none of this module's request
+construction runs — no request is built or sent — though dry runs still import the
+module and build ``Turn``s. The personas are the product and this is the knob most
+likely to cheapen them.
 
 ``docs/guardrails.md`` records what went wrong here before, and why each shape is the
 shape it is.

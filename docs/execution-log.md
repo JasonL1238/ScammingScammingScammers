@@ -165,6 +165,79 @@ in flight would leave no red evidence. Main never contains the regression.
   log's run URLs.
 - **Escalations:** none. Follow-up filed: range-guard the probation caps.
 
+### T1.3 — Docs re-tensing sweep
+
+- **Scope:** every doc, docstring, comment, and loaded-description claim stating
+  unbuilt behavior as present fact, found by a 5-agent parallel sweep over
+  `docs/`, `README.md`, module docstrings, SQL headers, persona YAMLs, and
+  playbooks, each claim verified against code before flagging. 24 unique
+  claims adjudicated; 17 sites edited across 18 files.
+- **Claims fixed (claim → action):** `legal.md` seven-day deletion, R2
+  migration, and "Redaction is what the system does" → re-tensed as designed,
+  with today's reality stated; `legal.md` notice paragraph → rewrote the
+  false "clip in the persona's voice" (contradicted `twiml.py`'s own
+  "never persona-flavoured" design) to the real clip-or-fixed-text guarantee;
+  `legal.md` no-outbound CI clause → tightened to the scan's package scope;
+  `twiml.py` "enrichment worker already transcribes" → planned; `llm.py` +
+  `guardrails.md` "no line of llm.py executes" under `--dry` → "none of its
+  request construction runs" (dry runs import the module and build `Turn`s);
+  `triage.py` loader-refresh claim → the seam is unwired, cache empty in
+  production; `conversation.py` EventSink docstrings → LoggingEventSink is
+  the only production implementation; `persona.py` stale system-message
+  mechanism → the reminder-in-newest-caller-turn mechanism (stale since the
+  Sonnet 5 switch); `shared/__init__.py` + four `enums.py` docstrings →
+  enrichment/dashboard marked planned; `001_initial.sql` "generated from
+  enums.py" → "mirror by hand" (the drift test claim, now true, kept);
+  `secrets.md` SOPS injection and control-plane split → prescriptive,
+  today's single-process reality stated; `.env.example` header → future-
+  tensed; `webhooks.py` retention comment → "declared… not yet enforced";
+  `guardrails.md` G-15 named-volume clause → atomic-writes-to-disk with the
+  compose mapping named as declaration; `guardrails.md` misroute sentence →
+  "released within two turns (disclosure or emergency redirect)" matching
+  the test exactly (the old wording was false for `real_emergency`);
+  `scripts.py` "These gate releases" → scoped to declared expectations;
+  marjorie sound-pack comment → clips not in repo, degrade to silence;
+  dot description → no longer claims the ElevenLabs engine her config moved
+  off. Verified-true claims kept unchanged: `README.md` CI paragraph,
+  `fiction.py` CI-verified invariants, `001_initial.sql` drift-test line.
+- **Recorded exemption — `playbooks/core_rules.md:4`.** Its enforcement
+  overstatement ("text that breaks them is caught before it is spoken") is
+  deliberately NOT edited: playbooks are inlined byte-for-byte into the
+  system prompt in front of the cache breakpoint, so any edit is a live
+  behavior change requiring a wet textloop run; the claim is true for the
+  safety-critical subset (the pre-TTS filter) and the PROMPT-only gap is
+  already disclosed to human readers in `guardrails.md`'s table; the
+  deterrent framing is prompt engineering, and Phase 3's MONITOR makes it
+  fully true. Do not "fix" the playbook in a future sweep without reading
+  this rationale.
+- **Rule 1 review:** two adversaries, cross-refutation. Outcomes:
+  - *A-F1/B-F1 (converged, survived):* the sweep's own `triage.py` rewrite
+    introduced a fresh false claim ("populates it via `set`" — nothing
+    populates the cache in production; it stays empty for the process
+    lifetime). **Fixed** and re-verified clause-by-clause.
+  - *A-F2/B-F2 (survived):* `secrets.md`'s first fix claimed the agent
+    "reads a local `.env` directly" (nothing parses `.env`), and
+    `.env.example` still carried the same present-tense SOPS claim.
+    **Both fixed.**
+  - *A-F3/A-F4 (survived, policy-checked):* this diff falsified
+    `roadmap.md`'s workstream B "Today" column, and the K row / Phase 1
+    goal "no CI" facts were stale since T1.1. **Fixed** as factual-state
+    patches; imperative bullets untouched, per the T1.2-settled
+    distinction — confirmed compliant by both adversaries.
+  - *B-F3/B-F4 (survived):* compose's two present-tense dashboard comments
+    and `triage.py:218`'s dashboard reference. **Fixed** ("planned").
+  - *A-F5 (dropped — no failure scenario; fix retained):* "only
+    implementation" → "only production implementation" kept as a one-word
+    precision improvement, recorded as such rather than a surviving finding.
+  - *B-F5 (resolved):* the playbook exemption above, recorded here as the
+    condition of the adversaries' sign-off.
+- **Verification (final tree):** 570 collected, 568 passed / 2 skipped;
+  textloop `--all-scripts --dry` exit 0; `ruff check .` clean;
+  `docker compose config -q` valid (compose comments were touched). No
+  functional code changed — every `.py` edit is docstring/comment-only, and
+  dot's `description` field is consumed only by the textloop banner.
+- **Escalations:** none.
+
 ### Phase 1 exit-criteria checklist
 
 From `roadmap.md` Phase 1, read under the recorded direct-to-main decision

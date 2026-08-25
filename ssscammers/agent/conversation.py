@@ -115,8 +115,8 @@ class CallEvent:
 
     Deliberately *not* a row for ``call_events`` in ``db/migrations/001_initial.sql``:
     that table wants a ``uuid`` and a ``timestamptz``, while a conversation holds a
-    monotonic clock — right for durations, wrong for stamping wall-clock time. A sink maps
-    ``call_sid`` to ``call_id`` and supplies ``ts`` itself.
+    monotonic clock — right for durations, wrong for stamping wall-clock time. A persistent
+    sink is expected to map ``call_sid`` to ``call_id`` and supply ``ts`` itself.
     """
 
     seq: int
@@ -127,7 +127,9 @@ class CallEvent:
 
 
 class EventSink(Protocol):
-    """Where call events go. Implemented against Postgres by the persistence layer."""
+    """Where call events go. :class:`LoggingEventSink` is the only production
+    implementation today; the planned persistence layer will implement this against
+    Postgres."""
 
     async def emit(self, event: CallEvent) -> None: ...
 

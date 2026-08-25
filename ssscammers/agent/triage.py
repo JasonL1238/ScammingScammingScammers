@@ -215,7 +215,7 @@ class SignalHit:
 
 @dataclass(frozen=True)
 class TriageResult:
-    """A classification plus enough context to justify it in the dashboard."""
+    """A classification plus enough context to justify it in the planned dashboard."""
 
     triage: TriageClass
     confidence: float
@@ -371,8 +371,11 @@ class AllowlistCache:
     """In-process view of who is known-good, known-bad, and known-scammy.
 
     The Twilio webhook has to answer in well under a second, so this never queries anything
-    on the call path. Postgres remains the system of record; a loader refreshes this copy on
-    write and on an interval.
+    on the call path. Postgres is intended to be the system of record; the ``loader`` seam
+    is where a refresh-on-write-and-interval will attach once persistence lands. Today
+    production builds this cache with ``loader=None`` and nothing populates it — it stays
+    empty for the process lifetime; ``set``/``bulk_set`` are the seams tests and the
+    future wiring use.
     """
 
     loader: Callable[[], dict[str, CallerClass]] | None = None

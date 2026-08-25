@@ -8,7 +8,9 @@ Three kinds live here and they test different things:
   within a turn or two. These are pass/fail, not judgement calls.
 * **Adversarial scripts** are a caller attacking the agent directly — prompt
   injection, threats, attempts to make it break character or hand over real data.
-  These gate releases.
+  These run in the CI release gate, but under ``--dry`` only their declared
+  expectations can fail; the injection/coaching judgements still need a live-model
+  run (machine-checked content predicates are scheduled work).
 """
 
 from __future__ import annotations

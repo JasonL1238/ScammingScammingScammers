@@ -19,9 +19,11 @@ notice, played from TwiML before the agent speaks at all.** A caller who continu
 after that has consented under even the stricter rule. This is the same mechanism
 every call centre in the country relies on.
 
-The notice is not a config option and not something the model is asked to say. It is a
-pre-rendered clip in the persona's voice, played by Twilio ahead of the media stream,
-so no prompt failure can drop it.
+The notice cannot be disabled and is never something the model is asked to say: a
+pre-rendered clip when one is configured, otherwise a fixed line in a plainly synthetic
+voice — degraded, never absent — played by Twilio ahead of the media stream, so no
+prompt failure can drop it. It is deliberately *not* in the persona's voice; the caller
+must not hear the character before the recording notice.
 
 **[LAWYER]** Whether the bot-as-party theory holds in the owner's specific state.
 
@@ -35,8 +37,9 @@ This is the single reason the inbound-only rule is architectural rather than
 stylistic. One outbound call or one text with an AI voice steps into the most actively
 litigated consumer-protection statute in the country, with statutory damages per call
 and a private right of action. So the system cannot place one: the Twilio subaccount
-has outbound disabled, no code path constructs an outbound request, and CI fails the
-build if one appears.
+keeps outbound disabled, no code path constructs an outbound request, and CI's
+no-outbound scan of the runtime package (`tests/test_no_outbound.py`) fails the build
+if one appears.
 
 ## Bot-disclosure statutes
 
@@ -80,11 +83,14 @@ Each is removed structurally rather than by policy:
 Recordings contain the voices of real people, sometimes including a third party a
 scammer names, and occasionally an innocent caller who dialled the wrong number.
 
-- Scam-call audio is kept; **audio from a call classified legit is deleted within
-  seven days** and its transcript truncated. That default is asserted by a test.
-- Recordings move to owner-controlled storage and are deleted from Twilio, so there is
-  one copy under one retention policy — and a platform suspension cannot destroy the
-  archive.
+- Scam-call audio is kept; **audio from a call classified legit is to be deleted
+  within seven days** and its transcript truncated. The seven-day default is seeded in
+  the schema and pinned by a test; the deletion job itself ships with the recording
+  pipeline (roadmap Phase 6) and does not exist yet.
+- Recordings will move to owner-controlled storage and be deleted from Twilio, so
+  there is one copy under one retention policy — and a platform suspension cannot
+  destroy the archive. Until that pipeline ships, recordings remain in Twilio under
+  its retention.
 - No voiceprints, no speaker identification, no cross-call biometric tracking. Caller
   correlation uses the phone number and nothing else.
 - Nothing is published. Some calls will be funny; that is not a reason to put a
@@ -92,8 +98,9 @@ scammer names, and occasionally an innocent caller who dialled the wrong number.
   is a real harm with a real cause of action attached.
 
 **[LAWYER]** What is owed when a scammer reads a third party's real details aloud on a
-recorded call. Redaction is what the system does; whether more is required is a
-question for someone qualified.
+recorded call. Redaction of third-party details is the designed answer — it ships with
+the enrichment layer and is not built yet; whether more is required is a question for
+someone qualified.
 
 ## Platform
 

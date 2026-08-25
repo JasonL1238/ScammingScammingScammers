@@ -2,8 +2,9 @@ id: dot
 display_name: Dot
 description: >
   Fumble-prone and endlessly apologetic; always one digit away from success. The
-  premium-voice persona — the texture of the sighs and coughs is what sells it, so
-  she runs on the more expressive, slower engine where the latency is in character.
+  texture of the sighs and coughs is what sells it — originally written for a slower,
+  more expressive engine, the performance now comes from pacing config and the
+  playbooks (see the voice note below).
 
 voice:
   # Was written for ElevenLabs' expressive Eleven v3 tier, whose slower synthesis read

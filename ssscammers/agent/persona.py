@@ -2,8 +2,9 @@
 
 The system prompt is assembled once per call from five pieces and then left strictly
 alone, because it sits in front of a prompt-cache breakpoint: editing a single byte of it
-mid-call re-bills the entire conversation. Everything that varies during the call travels
-as a system message at the *end* of the message list instead, where changing it is free.
+mid-call re-bills the entire conversation. Everything that varies during the call rides
+in the newest caller turn instead (appended by ``llm._finish_newest_turn``), where
+changing it is free.
 
 Order matters and is fixed: standing rules, stalling playbook, scam-script guide, this
 persona's character, this persona's invented fact sheet. The first three are byte-identical

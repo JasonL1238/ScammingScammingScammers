@@ -4,7 +4,7 @@
 -- time and a handful of events per second, adding Kafka or Redis would buy nothing
 -- and cost a component that can break at three in the morning.
 --
--- The enum values below are generated from ssscammers/shared/enums.py and a test
+-- The enum values below mirror ssscammers/shared/enums.py by hand, and a test
 -- fails the build if the two drift apart. Edit the Python, then edit here.
 
 BEGIN;
