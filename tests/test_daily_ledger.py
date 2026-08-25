@@ -11,13 +11,14 @@ import json
 from pathlib import Path
 
 import pytest
-from helpers import FakeClock
+from helpers import RESERVED_CALLER, FakeClock, reserve_call
 
 from ssscammers.agent.daily_ledger import DailyLedger
 from ssscammers.agent.registry import CallRegistry
-from ssscammers.shared.enums import EntryPath
 
-CALLER = "+19375550101"
+#: Same number reserve_call books admissions under, so the repeat-caller and cap
+#: assertions below are checking the caller the registry actually admitted.
+CALLER = RESERVED_CALLER
 
 
 def ledger(tmp_path: Path, *, day: str = "2026-08-20", **kwargs) -> DailyLedger:
@@ -236,30 +237,22 @@ class TestTheRegistryHonoursIt:
         # banked duration was an accident of call order and could only be asserted as `>0`.
         return CallRegistry(max_concurrent=5, ledger=led, clock=clock or FakeClock())
 
-    def reserve(self, reg: CallRegistry, sid: str) -> object:
-        return reg.reserve(
-            call_sid=sid,
-            caller_number=CALLER,
-            entry_path=EntryPath.DIRECT,
-            persona_id="marjorie",
-        )
-
     def test_a_capped_day_refuses_and_names_the_cap(self, tmp_path: Path) -> None:
         led = ledger(tmp_path, minutes_cap=1)
         led.record_duration("EARLIER", 60 * 60)
-        admission = self.reserve(self.registry(led), "CA1")
+        admission = reserve_call(self.registry(led), "CA1")
         assert not admission.admitted
         assert admission.capped == "daily_minutes_cap"
         assert not admission.at_capacity, "a full day is not a full line"
 
     def test_without_a_ledger_nothing_is_capped(self, tmp_path: Path) -> None:
-        assert self.reserve(self.registry(None), "CA1").admitted
+        assert reserve_call(self.registry(None), "CA1").admitted
 
     def test_releasing_a_call_banks_exactly_its_minutes(self, tmp_path: Path) -> None:
         led = ledger(tmp_path, minutes_cap=60)
         clock = FakeClock()
         reg = self.registry(led, clock)
-        self.reserve(reg, "CA1")
+        reserve_call(reg, "CA1")
         clock.advance(12 * 60)
         reg.release("CA1")
         assert json.loads((tmp_path / "ledger.json").read_text())["seconds"] == 12 * 60
@@ -269,9 +262,9 @@ class TestTheRegistryHonoursIt:
         # the cap was covered at the ledger level and its only real call site was not.
         led = ledger(tmp_path, repeat_caller_cap=2)
         reg = self.registry(led)
-        assert self.reserve(reg, "CA1").admitted
-        assert self.reserve(reg, "CA2").admitted
-        third = self.reserve(reg, "CA3")
+        assert reserve_call(reg, "CA1").admitted
+        assert reserve_call(reg, "CA2").admitted
+        third = reserve_call(reg, "CA3")
         assert not third.admitted
         assert third.capped == "repeat_caller_cap"
 
@@ -282,7 +275,7 @@ class TestTheRegistryHonoursIt:
         led = ledger(tmp_path, minutes_cap=600)
         clock = FakeClock()
         reg = self.registry(led, clock)
-        self.reserve(reg, "CA1")
+        reserve_call(reg, "CA1")
         clock.advance(reg.stale_after_seconds + 1)
         assert reg.active_count == 0, "the reaper should have dropped it"
         assert json.loads((tmp_path / "ledger.json").read_text())["seconds"] > 0
@@ -293,8 +286,8 @@ class TestTheRegistryHonoursIt:
         # 90-minute ceiling. In-flight calls are now reserved at that ceiling up front.
         led = ledger(tmp_path, minutes_cap=90, per_call_cap_seconds=90 * 60)
         reg = self.registry(led)
-        assert self.reserve(reg, "CA1").admitted, "nothing committed yet, so the first admits"
-        second = self.reserve(reg, "CA2")
+        assert reserve_call(reg, "CA1").admitted, "nothing committed yet, so the first admits"
+        second = reserve_call(reg, "CA2")
         # CA1 has banked nothing — it has not finished — but it commits the full ceiling,
         # which is the whole cap. Before this fix the ledger saw 0 minutes and admitted.
         assert not second.admitted
@@ -308,7 +301,7 @@ class TestTheRegistryHonoursIt:
         reg = self.registry(led)
         admitted = [
             sid for sid in ("CA1", "CA2", "CA3", "CA4", "CA5")
-            if self.reserve(reg, sid).admitted
+            if reserve_call(reg, sid).admitted
         ]
         worst_case_minutes = len(admitted) * per_call / 60.0
         assert worst_case_minutes <= cap_minutes + per_call / 60.0
@@ -320,9 +313,9 @@ class TestTheRegistryHonoursIt:
         # up, and refusing the retry would drop a call that is mid-flight.
         led = ledger(tmp_path, minutes_cap=60)
         reg = self.registry(led)
-        assert self.reserve(reg, "CA1").admitted
+        assert reserve_call(reg, "CA1").admitted
         led.record_duration("SOMETHING_ELSE", 99 * 60)  # day is now over
-        again = self.reserve(reg, "CA1")
+        again = reserve_call(reg, "CA1")
         assert again.admitted and again.capped is None
 
 

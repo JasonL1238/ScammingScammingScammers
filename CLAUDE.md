@@ -88,7 +88,8 @@ not actually run.
 ## Changing code safely
 
 - Search for an existing type, utility, or service before writing a new one. Shared test
-  helpers live in `tests/helpers.py` (`FakeClock`, `make_director`, `UNSERVABLE_BUNDLE`)
+  helpers live in `tests/helpers.py` (`FakeClock`, `make_director`, `reserve_call`,
+  `UNSERVABLE_BUNDLE`)
   and shared pytest *fixtures* in `tests/conftest.py` (`unservable_persona`) — reuse them rather
   than rolling a third clock or a fourth director.
 - Remove code only after a caller search plus a test or clear static proof it's dead.

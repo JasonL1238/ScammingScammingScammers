@@ -176,7 +176,7 @@ class PersonaDirector:
             self._caller_turns += 1
             self.triage.observe(utterance)
 
-        plan = self._plan(
+        return self._plan(
             elapsed_seconds=elapsed_seconds,
             silence_seconds=silence_seconds,
             dtmf_digits=dtmf_digits,
@@ -185,8 +185,6 @@ class PersonaDirector:
             caller_hung_up=caller_hung_up,
             exits_only=False,
         )
-        assert plan is not None  # exits_only=False always plans something
-        return plan
 
     def check_exits(
         self,
@@ -231,7 +229,7 @@ class PersonaDirector:
         spend_exceeded: bool,
         caller_hung_up: bool,
         exits_only: bool,
-    ) -> TurnPlan | None:
+    ) -> TurnPlan:
         verdict = self.triage.result()
         allowlisted = bool(self.caller_number) and self.allowlist.is_allowlisted(self.caller_number)
 

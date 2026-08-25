@@ -147,7 +147,7 @@ _PRESSURE_SIGNALS: tuple[tuple[re.Pattern[str], float], ...] = (
 _LEGIT_SIGNALS: tuple[tuple[tuple[re.Pattern[str], ...], float], ...] = (
     (
         _phrases(
-            r"\b(?:your )?prescription (?:is )?(?:is )?ready\b", r"\bthe pharmacy\b",
+            r"\b(?:your )?prescription (?:is ){0,2}ready\b", r"\bthe pharmacy\b",
             r"\bdoctor'?s office\b", r"\bdental (?:office|practice)\b", r"\bsurgery\b",
             r"\bconfirm(?:ing)? your appointment\b", r"\breschedul\w+ your appointment\b",
         ),

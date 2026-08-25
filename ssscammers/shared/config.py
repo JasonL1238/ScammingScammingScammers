@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import math
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TypeVar
 
 __all__ = ["Settings", "load_settings"]
@@ -81,6 +81,10 @@ class Settings:
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
     honeypot_number: str = ""
+    """**Not used yet.** Nothing reads this: the DID is configured in the Twilio
+    console, and the agent never checks the ``To`` field of an inbound webhook.
+    Kept loaded so the intended seam (own-number awareness) stays on record."""
+
     public_base_url: str = ""
     media_stream_path_token: str = ""
 
@@ -132,6 +136,9 @@ class Settings:
 
     # --- Storage ---
     database_url: str = ""
+    """**Not used yet.** Nothing reads this: the persistence layer is scheduled
+    roadmap work and nothing imports a database driver today. Kept loaded so the
+    seam stays on record."""
 
     # --- Owner identity. Real values; the filter blocks them, never speaks them. ---
     owner_pii_denylist: tuple[str, ...] = ()
@@ -155,7 +162,7 @@ class Settings:
     probation_hard_commit_seconds: int = 90
     """A real caller states their business well before this. After it, commit."""
 
-    daily_ledger_path: str = "/var/lib/ssscammers/daily_ledger.json"
+    daily_ledger_path: str = _LEDGER_DEFAULT
     """Where today's minute and spend totals live.
 
     Must be on a volume that survives a *deploy*, not merely a restart — ``docker-compose``
@@ -172,8 +179,6 @@ class Settings:
     daily_minutes_cap: int = 360
     daily_spend_cap_usd: int = 50
     repeat_caller_daily_cap: int = 5
-
-    extra: dict[str, str] = field(default_factory=dict)
 
     @property
     def media_stream_url(self) -> str:

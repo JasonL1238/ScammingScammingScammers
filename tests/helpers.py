@@ -13,10 +13,15 @@ import random
 
 from ssscammers.agent.persona import Persona, load_persona
 from ssscammers.agent.persona_director import PersonaDirector
+from ssscammers.agent.registry import Admission, CallRegistry
 from ssscammers.shared.enums import EntryPath
 
 #: The caller number every offline test dials from. Not on any allowlist.
 CALLER = "+19375559999"
+
+#: The caller number registry tests reserve from. Deliberately distinct from
+#: ``CALLER``: this one pins the admission path, that one the director path.
+RESERVED_CALLER = "+19375550101"
 
 #: Stands in for the owner's real name, which the output filter must never speak.
 OWNER_PII: tuple[str, ...] = ("Jason",)
@@ -67,6 +72,22 @@ def make_director(
     }
     base.update(overrides)
     return PersonaDirector(**base)  # type: ignore[arg-type]
+
+
+def reserve_call(
+    registry: CallRegistry, call_sid: str, *, persona_id: str = "marjorie"
+) -> Admission:
+    """Reserve a pinned direct call — the admission every registry test starts from.
+
+    Rolled identically in three test modules before it lived here; the kwargs are the
+    pinned shape of a direct-dial admission, and three copies drift.
+    """
+    return registry.reserve(
+        call_sid=call_sid,
+        caller_number=RESERVED_CALLER,
+        entry_path=EntryPath.DIRECT,
+        persona_id=persona_id,
+    )
 
 
 UNSERVABLE_BUNDLE = {

@@ -14,12 +14,13 @@ import wave
 from pathlib import Path
 
 import pytest
+from helpers import reserve_call
 
 from ssscammers.agent import media
 from ssscammers.agent.persona import VoiceConfig
 from ssscammers.agent.registry import CallRegistry
 from ssscammers.shared.config import Settings
-from ssscammers.shared.enums import EndReason, EntryPath
+from ssscammers.shared.enums import EndReason
 
 
 def write_wav(
@@ -137,12 +138,7 @@ class TestABundleThePipelineCannotVoiceIsRefused:
     def _serve(persona_id: str) -> tuple[FakeSocket, CallRegistry]:
         socket = FakeSocket()
         registry = CallRegistry(max_concurrent=1)
-        admission = registry.reserve(
-            call_sid="CA1",
-            caller_number="+19375550101",
-            entry_path=EntryPath.DIRECT,
-            persona_id=persona_id,
-        )
+        admission = reserve_call(registry, "CA1", persona_id=persona_id)
         assert admission.call is not None
         registry.attach_stream("CA1")
 

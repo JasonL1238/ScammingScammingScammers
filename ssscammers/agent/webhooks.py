@@ -306,9 +306,6 @@ def create_app(
     )
 
     app = FastAPI(title="ssscammers agent", docs_url=None, redoc_url=None, openapi_url=None)
-    app.state.settings = settings
-    app.state.registry = registry
-    app.state.allowlist = allowlist
 
     after_stream_url = _absolute(settings.public_base_url, "/twilio/after-stream")
     voicemail_done_url = _absolute(settings.public_base_url, "/twilio/voicemail-complete")

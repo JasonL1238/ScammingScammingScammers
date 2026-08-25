@@ -7,10 +7,10 @@ stop being taken.
 
 from __future__ import annotations
 
-from helpers import FakeClock
+from helpers import FakeClock, reserve_call
 
 from ssscammers.agent.registry import CallRegistry
-from ssscammers.shared.enums import CallPhase, CallStatus, EndReason, EntryPath
+from ssscammers.shared.enums import CallPhase, CallStatus, EndReason
 
 
 def make_registry(max_concurrent: int = 2) -> tuple[CallRegistry, FakeClock]:
@@ -18,37 +18,28 @@ def make_registry(max_concurrent: int = 2) -> tuple[CallRegistry, FakeClock]:
     return CallRegistry(max_concurrent=max_concurrent, clock=clock), clock
 
 
-def reserve(registry: CallRegistry, call_sid: str, number: str = "+19375550101"):
-    return registry.reserve(
-        call_sid=call_sid,
-        caller_number=number,
-        entry_path=EntryPath.DIRECT,
-        persona_id="marjorie",
-    )
-
-
 class TestCapacity:
     def test_calls_are_admitted_up_to_the_cap(self) -> None:
         registry, _ = make_registry(max_concurrent=2)
-        assert reserve(registry, "CA1").admitted
-        assert reserve(registry, "CA2").admitted
+        assert reserve_call(registry, "CA1").admitted
+        assert reserve_call(registry, "CA2").admitted
 
     def test_the_call_past_the_cap_is_not_admitted(self) -> None:
         registry, _ = make_registry(max_concurrent=2)
-        reserve(registry, "CA1")
-        reserve(registry, "CA2")
+        reserve_call(registry, "CA1")
+        reserve_call(registry, "CA2")
 
-        admission = reserve(registry, "CA3")
+        admission = reserve_call(registry, "CA3")
         assert not admission.admitted
         assert admission.at_capacity
 
     def test_releasing_a_call_frees_its_slot(self) -> None:
         registry, _ = make_registry(max_concurrent=1)
-        reserve(registry, "CA1")
-        assert not reserve(registry, "CA2").admitted
+        reserve_call(registry, "CA1")
+        assert not reserve_call(registry, "CA2").admitted
 
         registry.release("CA1")
-        assert reserve(registry, "CA2").admitted
+        assert reserve_call(registry, "CA2").admitted
 
     def test_releasing_an_unknown_call_is_harmless(self) -> None:
         # Twilio sends status callbacks for calls this process never handled — a call
@@ -62,8 +53,8 @@ class TestRetriesDoNotConsumeSlots:
 
     def test_reserving_the_same_call_twice_uses_one_slot(self) -> None:
         registry, _ = make_registry(max_concurrent=1)
-        first = reserve(registry, "CA1")
-        second = reserve(registry, "CA1")
+        first = reserve_call(registry, "CA1")
+        second = reserve_call(registry, "CA1")
 
         assert second.admitted
         assert registry.active_count == 1
@@ -71,10 +62,10 @@ class TestRetriesDoNotConsumeSlots:
 
     def test_a_retry_does_not_reset_a_streaming_call(self) -> None:
         registry, _ = make_registry()
-        reserve(registry, "CA1")
+        reserve_call(registry, "CA1")
         registry.attach_stream("CA1")
 
-        again = reserve(registry, "CA1")
+        again = reserve_call(registry, "CA1")
         assert again.call is not None
         assert again.call.stream_attached
         assert again.call.status is CallStatus.IN_PROGRESS
@@ -89,7 +80,7 @@ class TestOnlyAdmittedCallsGetMedia:
     def test_a_second_stream_for_one_call_is_refused(self) -> None:
         # One media stream per call. A replayed start message is not a second call.
         registry, _ = make_registry()
-        reserve(registry, "CA1")
+        reserve_call(registry, "CA1")
         assert registry.attach_stream("CA1") is not None
         assert registry.attach_stream("CA1") is None
 
@@ -99,7 +90,7 @@ class TestHowTheCallEnded:
         # Between the stream closing and Twilio confirming the hangup, the leg is still
         # up, still billing, and may still record a voicemail.
         registry, _ = make_registry()
-        reserve(registry, "CA1")
+        reserve_call(registry, "CA1")
 
         finished = registry.finish(
             "CA1", final_phase=CallPhase.STALL, end_reason=EndReason.MAX_DURATION
@@ -110,7 +101,7 @@ class TestHowTheCallEnded:
 
     def test_a_caller_who_was_promised_a_voicemail_is_owed_one(self) -> None:
         registry, _ = make_registry()
-        reserve(registry, "CA1")
+        reserve_call(registry, "CA1")
         call = registry.finish(
             "CA1", final_phase=CallPhase.DISCLOSE_EXIT, voicemail_promised=True
         )
@@ -122,7 +113,7 @@ class TestHowTheCallEnded:
         # victim warning tells the caller to hang up and ring their bank. Inferring from
         # the phase offered a recorded-message beep to exactly the wrong caller.
         registry, _ = make_registry()
-        reserve(registry, "CA1")
+        reserve_call(registry, "CA1")
         call = registry.finish(
             "CA1", final_phase=CallPhase.DISCLOSE_EXIT, voicemail_promised=False
         )
@@ -136,7 +127,7 @@ class TestHowTheCallEnded:
             [CallPhase.TERMINATE, CallPhase.EMERGENCY_EXIT, CallPhase.STALL, CallPhase.DISCLOSE_EXIT]
         ):
             sid = f"CA{index}"
-            reserve(registry, sid)
+            reserve_call(registry, sid)
             call = registry.finish(sid, final_phase=phase)
             assert call is not None
             assert not call.voicemail_promised, phase
@@ -147,7 +138,7 @@ class TestHowTheCallEnded:
 
     def test_finishing_twice_keeps_the_first_promise(self) -> None:
         registry, _ = make_registry()
-        reserve(registry, "CA1")
+        reserve_call(registry, "CA1")
         registry.finish("CA1", final_phase=CallPhase.DISCLOSE_EXIT, voicemail_promised=True)
         again = registry.finish("CA1")
         assert again is not None
@@ -157,7 +148,7 @@ class TestHowTheCallEnded:
         # The pipeline reports why it stopped; a later call with no reason must not
         # erase it.
         registry, _ = make_registry()
-        reserve(registry, "CA1")
+        reserve_call(registry, "CA1")
         registry.finish("CA1", final_phase=CallPhase.TERMINATE, end_reason=EndReason.DEAD_AIR)
         again = registry.finish("CA1")
         assert again is not None
@@ -171,20 +162,20 @@ class TestStaleCallsCannotWedgeTheLine:
         # of those and the line silently stops answering.
         registry, clock = make_registry(max_concurrent=1)
         registry.stale_after_seconds = 100.0
-        reserve(registry, "CA1")
-        assert not reserve(registry, "CA2").admitted
+        reserve_call(registry, "CA1")
+        assert not reserve_call(registry, "CA2").admitted
 
         clock.advance(101.0)
-        assert reserve(registry, "CA2").admitted
+        assert reserve_call(registry, "CA2").admitted
 
     def test_a_call_within_the_window_is_left_alone(self) -> None:
         registry, clock = make_registry(max_concurrent=1)
         registry.stale_after_seconds = 100.0
-        reserve(registry, "CA1")
+        reserve_call(registry, "CA1")
 
         clock.advance(99.0)
         assert registry.active_count == 1
-        assert not reserve(registry, "CA2").admitted
+        assert not reserve_call(registry, "CA2").admitted
 
 
 class TestKillSwitch:
@@ -196,7 +187,7 @@ class TestKillSwitch:
         # G-20 stops new baiting. A conversation already under way is a separate
         # decision, made by whoever flips the switch.
         registry, _ = make_registry()
-        reserve(registry, "CA1")
+        reserve_call(registry, "CA1")
         registry.enabled = False
         assert registry.active_count == 1
         assert registry.get("CA1") is not None
@@ -205,7 +196,7 @@ class TestKillSwitch:
 class TestRecordingSid:
     def test_the_recording_sid_is_kept_against_the_call(self) -> None:
         registry, _ = make_registry()
-        reserve(registry, "CA1")
+        reserve_call(registry, "CA1")
         registry.record_recording_sid("CA1", "RE123")
         call = registry.get("CA1")
         assert call is not None
@@ -223,7 +214,7 @@ class TestOneStreamPerCallEver:
         # the path token open a fresh conversation on our bill and overwrite the outcome
         # `/twilio/after-stream` reads.
         registry, _ = make_registry()
-        reserve(registry, "CA1")
+        reserve_call(registry, "CA1")
         assert registry.attach_stream("CA1") is not None
 
         registry.finish("CA1", final_phase=CallPhase.DISCLOSE_EXIT, voicemail_promised=True)
