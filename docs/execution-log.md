@@ -376,8 +376,20 @@ in flight would leave no red evidence. Main never contains the regression.
   with the post-edit checksum. Volume kept for T1.6's existing-volume test.
 - **Verification (final tree):** 653 passed / 2 skipped with
   `MIGRATIONS_TEST_DATABASE_URL` against a real postgres:16 container
-  (641 / 14 without — PG tests skip locally); textloop dry exit 0;
+  (639 / 16 without — PG tests skip locally); textloop dry exit 0;
   `ruff check .` clean.
+- **Green on main:** run
+  [32909325807](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/32909325807)
+  — all eight jobs, including both new migration-runner legs.
+- **Red proof** (throwaway branch, deleted after the red run): a seeded
+  broken `002_broken.sql` — run
+  [32909343434](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/32909343434):
+  both `migration runner` legs red (the invalid SQL fails the apply tests)
+  **and** all four `tests` cells red (the self-dissolving initdb fence
+  refuses a second migration while the mount exists), textloop and lint
+  green. The vacuous-skip failure mode has no branch seed — the grep guard
+  was verified mechanically by both adversaries (env unset → step exit 1),
+  recorded here as the per-failure-mode evidence.
 - **Escalations:** none.
 
 ### Phase 1 exit-criteria checklist
