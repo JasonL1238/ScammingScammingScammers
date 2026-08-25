@@ -175,24 +175,6 @@ class TestLayoutViolations:
         write(tmp_path, "001_prep.sql", "PREPARE stmt AS SELECT 1;\n")
         assert ordered_migrations(tmp_path)[0].name == "prep"
 
-
-class TestTheInitdbWindowFence:
-    def test_no_second_migration_while_the_initdb_mount_exists(self) -> None:
-        """Until docker-compose.yml stops mounting db/migrations into
-        /docker-entrypoint-initdb.d, a fresh volume receives every migration raw
-        from the mount while the runner can only ever baseline 001 — so a
-        committed 002 would wedge fresh-volume bring-up (the runner would
-        re-execute it into an error). Self-dissolving: when the mount line is
-        removed (scheduled next), the guard skips itself.
-        """
-        compose = Path(__file__).resolve().parents[1] / "docker-compose.yml"
-        if "/docker-entrypoint-initdb.d" not in compose.read_text(encoding="utf-8"):
-            pytest.skip("the initdb mount is gone; any number of migrations is fine")
-        assert len(ordered_migrations()) == 1, (
-            "no second migration may land until the initdb mount is removed from "
-            "docker-compose.yml — see the fence note in ssscammers/db/runner.py"
-        )
-
     def test_an_empty_directory_is_refused(self, tmp_path: Path) -> None:
         with pytest.raises(MigrationFileError, match="no migrations"):
             ordered_migrations(tmp_path)

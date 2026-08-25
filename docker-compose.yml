@@ -7,6 +7,12 @@
 # not in the repo yet) will hold recordings of real people and is bound to the
 # tailnet instead.
 
+# One definition of the in-network DSN: migrate, agent, and (when its phase
+# lands) enrichment must agree on it, or the migrate gate stops guaranteeing the
+# agent never serves against an unmigrated database.
+x-container-database-url: &container_database_url
+  postgresql://ssscammers:${POSTGRES_PASSWORD:-ssscammers}@postgres:5432/ssscammers
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -15,15 +21,33 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ssscammers}
       POSTGRES_DB: ssscammers
     volumes:
+      # Schema lives in db/migrations, applied by the migrate one-shot below —
+      # tracked, checksummed, and safe on fresh and existing volumes alike.
       - pgdata:/var/lib/postgresql/data
-      # Applied in filename order on first boot.
-      - ./db/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ssscammers"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
+
+  # One-shot: applies pending migrations (python -m ssscammers.db), then exits.
+  # The agent is gated on its success, so the stack never serves against a
+  # database the runner has not brought up to date.
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/agent.Dockerfile
+    command: ["python", "-m", "ssscammers.db"]
+    # No env_file: the runner consumes exactly one variable, and a one-shot
+    # that never needed the provider keys should never hold them
+    # (docs/secrets.md rule 3).
+    environment:
+      DATABASE_URL: *container_database_url
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
 
   agent:
     build:
@@ -34,10 +58,19 @@ services:
     # One worker, always: the concurrency cap and the live-call registry are in
     # process memory, so a second worker would answer calls the first cannot see.
     command: ["python", "-m", "ssscammers.agent", "--port", "8080"]
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Container truth lives next to the topology: `environment` beats
+      # `env_file`, so the shared .env stays host-oriented (localhost) for
+      # local tooling while containers reach postgres by service name.
+      DATABASE_URL: *container_database_url
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     # Loopback only. Caddy terminates TLS and is the sole public entrypoint; binding
     # 0.0.0.0 here would expose the media socket's path token in cleartext and publish
     # /healthz to anyone, while the planned dashboard next door is carefully bound to
@@ -56,21 +89,33 @@ services:
     stop_grace_period: 120s
     restart: unless-stopped
 
+  # Profile-gated until its phase builds the package: the slot is declared, the
+  # module does not exist yet, and a default `up --build` must not try it.
   enrichment:
+    profiles: ["enrichment"]
     build:
       context: .
       dockerfile: docker/agent.Dockerfile
     command: ["python", "-m", "ssscammers.enrichment.worker"]
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: *container_database_url
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
 
+  # Profile-gated until its phase builds the directory (see the header note).
+  # Deliberately no env_file and no DSN here: the dashboard's phase gives it a
+  # read-only Postgres role and the narrowest env it needs — it must never hold
+  # the agent's provider keys, and wiring the read-write DSN now would preempt
+  # that decision.
   dashboard:
+    profiles: ["dashboard"]
     build:
       context: ./dashboard
-    env_file: .env
     depends_on:
       postgres:
         condition: service_healthy
@@ -82,6 +127,10 @@ services:
   caddy:
     image: caddy:2-alpine
     depends_on: [agent]
+    environment:
+      # Must match the host in PUBLIC_BASE_URL — Twilio signs the public URL.
+      # The localhost default boots a clean checkout on Caddy's internal CA.
+      DOMAIN: ${DOMAIN:-localhost}
     ports:
       - "80:80"
       - "443:443"

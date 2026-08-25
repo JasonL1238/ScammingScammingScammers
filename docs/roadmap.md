@@ -145,7 +145,7 @@ gate real. Three facts forced this to the front: at this plan's writing there wa
 CI configuration in the repo** despite `legal.md` and `guardrails.md` claiming
 CI-enforced gates (closed at T1.1); migrations applied only via initdb on a fresh
 volume, so the first post-deploy schema change would have been an emergency (closed at
-T1.5 — the runner tracks, baselines, and applies; the initdb mount's removal is T1.6's);
+T1.5 — the runner tracks, baselines, and applies; the initdb mount was removed at T1.6);
 and a `NOTICE_AUDIO_URL`
 that is fetchable at boot but 404s at call time records real people with no notice — a
 legal-notice hole (closed at T1.4; the residual exposure is one probe interval).

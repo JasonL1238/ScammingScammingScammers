@@ -1,0 +1,16 @@
+# The TLS terminator and the stack's only public entrypoint (ports 80/443).
+#
+# Exposure posture: Caddy forwards everything to the agent, and the agent is the
+# auth boundary — every webhook validates X-Twilio-Signature against the URL
+# Twilio was configured with (reconstructed from PUBLIC_BASE_URL, never trusted
+# from headers), and the media WebSocket requires the secret path token. Caddy
+# therefore needs no auth config of its own, and no X-Forwarded-* trust exists
+# anywhere. WebSockets are proxied natively; no extra directives needed.
+#
+# DOMAIN must match the host in PUBLIC_BASE_URL — Twilio signs the public URL,
+# and a mismatch fails every webhook's signature check. The localhost default
+# lets a clean checkout boot against Caddy's internal CA with no real domain.
+
+{$DOMAIN:localhost} {
+	reverse_proxy agent:8080
+}

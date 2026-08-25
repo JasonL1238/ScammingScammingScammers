@@ -1,8 +1,7 @@
 """``python -m ssscammers.db`` — apply pending migrations.
 
-Exit codes: 0 on success (including nothing to do), 1 on any failure. The planned
-compose ``migrate`` one-shot service (next task: it replaces the initdb mount)
-will gate the agent on exactly this.
+Exit codes: 0 on success (including nothing to do), 1 on any failure. The compose
+``migrate`` one-shot service gates the agent on exactly this.
 """
 
 from __future__ import annotations

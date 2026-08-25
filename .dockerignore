@@ -1,0 +1,14 @@
+# The build context is the repo root: without this file, a careless COPY could
+# bake secrets or junk into an image layer, where deletion does not remove them.
+.env
+.env.*
+!.env.example
+.git
+.github
+.venv
+**/__pycache__
+*.egg-info
+tests/
+docs/
+dashboard/
+local_out/

@@ -96,6 +96,21 @@ Every webhook requires a valid `X-Twilio-Signature`, and a missing `TWILIO_AUTH_
 refuses service rather than skipping the check. `--allow-unsigned` exists for local
 development and must never be used with a live number.
 
+### Run the full stack
+
+```bash
+docker compose up --build
+```
+
+From a clean checkout (Docker Compose ≥ 2.24): `cp .env.example .env`, then set
+`MEDIA_STREAM_PATH_TOKEN` (the app refuses the placeholder) and `PUBLIC_BASE_URL`
+before the first `up`. The
+`migrate` one-shot applies pending schema migrations — tracked and checksummed, safe
+on fresh and existing volumes — and the agent starts only after it succeeds. Caddy
+terminates TLS for `DOMAIN` (default `localhost`, on its internal CA) and is the only
+public listener. The enrichment and dashboard services are profile-gated until their
+phases build them (`--profile enrichment` / `--profile dashboard`).
+
 ### How a call ends
 
 The pipeline hangs up by closing its media socket, and Twilio then resumes the TwiML

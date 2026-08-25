@@ -392,6 +392,84 @@ in flight would leave no red evidence. Main never contains the regression.
   recorded here as the per-failure-mode evidence.
 - **Escalations:** none.
 
+### T1.6 — Docker build context + compose repair
+
+- **Scope:** new `docker/agent.Dockerfile` (python:3.13-slim, non-root,
+  agentstate ownership chowned before `USER`, explicit COPY list keeping the
+  source tree at `/app` so `parents[2]` resolution works for personas and
+  migrations, one-worker CMD), `docker/Caddyfile` (TLS terminator; the agent
+  stays the auth boundary), `.dockerignore`; compose: initdb mount removed,
+  `migrate` one-shot gating the agent on `service_completed_successfully`,
+  the in-network DSN as a single YAML anchor across migrate/agent/enrichment,
+  `env_file` long-form `required: false`, enrichment+dashboard
+  profile-gated, `DOMAIN` for caddy; `POSTGRES_PASSWORD` and `DOMAIN`
+  documented; README "Run the full stack" quickstart.
+- **Rule 1 review** (two adversaries, cross-refutation, one cascade round):
+  - *A-F1 (survived):* a strong `POSTGRES_PASSWORD` containing `/ @ ? #`
+    breaks the interpolated DSN (asyncpg parse errors, executed) and gates
+    the whole stack off with a misleading connection error — biting exactly
+    the operator who follows "set a real one". **Fixed** as a doc contract
+    at the point of setting: URL-safe charset (RFC 3986 unreserved), the
+    named failure mode, `openssl rand -hex 24` safe vs `-base64` not.
+    A accepted (a fail-closed, loud misconfiguration does not justify
+    restructuring the runner's standard DSN interface); the deploying phase
+    should graduate the contract to a validated check when SOPS lands.
+  - *A-F2 (survived):* the `env_file` long syntax needs Compose ≥ 2.24 and
+    no minimum was documented. **Fixed** in the README quickstart.
+  - *B-F1 (survived):* three docs falsified by this diff — the roadmap's
+    "mount removal is T1.6's" (now past-tense), `secrets.md`'s "container
+    deployment is not built yet" (now describes today's plaintext
+    `env_file` injection honestly, with SOPS still the pre-deployment
+    requirement), and the CLI docstring's "planned migrate service" (now
+    true present tense). **Fixed**; every rewritten sentence re-verified
+    by both adversaries, including "never passed on a command line"
+    against every rendered compose command.
+  - *B-F2 (survived):* T1.5's self-dissolving initdb fence dissolved but
+    was not retired — a stale bolded "no 002 may be committed" would have
+    blocked legitimate schema work. **Fixed:** docstring re-tensed to
+    history, the fence test deleted. The deletion accidentally reparented
+    the empty/missing-directory tests into `TestLayoutViolations` — both
+    adversaries ruled that home semantically *more* correct than the old
+    one; made deliberate with normalized spacing, and recorded here
+    accurately (the fence class did hold three tests, not one as the
+    coordinator first claimed).
+  - *B-F3 (survived):* the migrate one-shot inherited the full `.env` —
+    every provider key — while consuming exactly one variable. **Fixed:**
+    `env_file` removed from migrate; its rendered environment now holds
+    only the DSN (verified from the rendered config).
+  - *B-F4 + A's cascade catch (survived):* enrichment kept the
+    host-oriented `localhost` DSN (wrong-by-inspection in-container) —
+    **fixed** with the anchor override; the dashboard placeholder then
+    stood as the odd one out, inheriting the full `.env` on the service
+    that will hold recordings — **fixed** by removing its `env_file` with
+    a comment deferring its env contract to its phase, per the roadmap's
+    own read-only-role design (not an escalation: Phase 8 already made
+    that call).
+  - *B-F6a (survived):* the DSN duplicated across services could drift and
+    silently break the migrate gate's guarantee — **fixed** as one YAML
+    anchor, rendering byte-identical (verified). *B-F6b (dropped, reason
+    recorded):* a CMD==compose-command fence test would pin a path nothing
+    exercises — compose `command:` overrides CMD on every supported path.
+  - *A's cascade prose catch:* "removed together with this runner's compose
+    wiring" misparsed as the wiring being removed — reworded.
+- **Operational verification (executed):** repo-dir `up --build` on the kept
+  T1.5 volume — migrate exit 0 "already applied", caddy up, and the agent
+  crash-looped with the *correct* loud `MEDIA_STREAM_PATH_TOKEN` refusal
+  (the local `.env` is unconfigured and is never edited by the agent — the
+  fail-closed boot check working as documented). Clean-checkout evidence:
+  an **rsync-staged working tree** (not a git clone — T1.8's close-out
+  re-runs this from a true clone post-commit) with its own `.env`: fresh
+  volume → migrate applied 001 in-container (proving `parents[2]` →
+  `ordered_migrations()` end-to-end, T1.5's deferral condition), agent
+  healthz on loopback and through Caddy TLS, `down`/`up` again → migrate
+  no-op, healthy; re-run green after the cascade fixes; `down -v` cleaned.
+- **Verification (final tree):** 638 passed / 16 skipped (the fence test's
+  skip became a deletion); textloop dry exit 0; `ruff check .` clean;
+  `docker compose config -q` valid; guarded compose items (postgres block,
+  volume names, loopback binding) byte-unchanged except the intended mount
+  removal.
+- **Escalations:** none.
+
 ### Phase 1 exit-criteria checklist
 
 From `roadmap.md` Phase 1, read under the recorded direct-to-main decision
@@ -417,7 +495,10 @@ throwaway branches.
 - [x] PII grep over `.env.example` returns nothing. Evidence: T1.2 —
   `rg -in "jason|zenblen" .env.example` exits empty; placeholders carry the
   secret-store pointer and the git-history note.
-- [ ] `docker compose up --build` succeeds from a clean checkout.
+- [x] `docker compose up --build` succeeds from a clean checkout. Evidence:
+  T1.6 — rsync-staged working-tree copy with a fresh `.env`: migrate applied
+  001, agent healthy via loopback and Caddy TLS, existing-volume re-up
+  no-oped. Re-verify from a true `git clone` at the T1.8 close-out.
 - [x] An unparseable numeric env var produces an asserted warning while still
   falling back to the default. Evidence: T1.2 —
   `tests/test_config.py::TestEnvNumber` asserts the warning via caplog (typo,

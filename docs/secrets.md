@@ -13,9 +13,12 @@ only in code.
    `.env.*` variant. The example file carries names and shapes, never values.
 2. **Secrets must be injected at container start**, from a SOPS-encrypted file or a
    secrets manager — never baked into images and never passed on a command line,
-   where they land in shell history and process listings. (The container deployment
-   is not built yet; today configuration comes from plain environment variables —
-   nothing in the agent parses a `.env` file.)
+   where they land in shell history and process listings. (Today's dev compose
+   injects them at container start from a local plaintext `.env` via `env_file` —
+   never baked into images or passed on a command line, both of which still hold —
+   and the SOPS/secrets-manager step remains the requirement before any real
+   deployment. The venv workflow reads plain environment variables; nothing in the
+   agent parses a `.env` file.)
 3. **The media worker never gets an org-scoped credential it doesn't need.** Today
    there is one process and one `.env`; when the stack splits, anything with broad
    authority belongs on the control-plane side, and the process that runs

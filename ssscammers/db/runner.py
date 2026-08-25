@@ -14,12 +14,10 @@ Semantics, in the order they matter:
   the initdb apply died midway — since the mount runs statements in autocommit —
   and baselining would certify a half-built schema, so the run refuses with a
   hard error instead.
-* **Until the initdb mount is removed from docker-compose.yml, no ``002`` may be
-  committed.** A fresh volume would receive every ``db/migrations/*.sql`` raw
-  from the mount, but only ``001`` can ever be baselined (the runner cannot know
-  how far initdb got), so the first run would re-execute ``002`` into an error.
-  The mount removal is the very next scheduled task; this note is the fence
-  until it lands.
+* **The initdb mount is gone** — removed when this runner's compose wiring
+  landed, so fresh volumes are brought up solely by the ``migrate`` one-shot and
+  any number of migrations is fine. Volumes created by the pre-runner
+  deployment's mount are exactly why the baselining path above exists.
 * **Each migration commits atomically with its tracking row**, in one
   transaction. asyncpg's parameterless ``execute`` uses the simple-query
   protocol, so multi-statement files run as written. Two consequences for
