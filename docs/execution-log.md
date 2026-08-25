@@ -90,10 +90,27 @@ in flight would leave no red evidence. Main never contains the regression.
   - Dropped in cross-refutation: B's initial claim that the import-mode pin
     guards collection (retracted by B against A-1's evidence — the pin is a
     declaration; nothing behavioral changes if it is deleted today).
-- **Red proofs:** pending — run URLs recorded after the gate is live on main.
-  Planned seeds: a `<Dial>` verb in `twiml.py` (fails `test_no_outbound`), a
-  flipped expectation in `simscammer/scripts.py` (fails `textloop`), an unused
-  import (fails `lint`).
+- **First green on main:** run
+  [32897840253](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/32897840253)
+  (commit `ad91384`) — all six jobs passed.
+- **Red proofs** (throwaway branches, deleted after their red runs completed;
+  each failed exactly the targeted gate):
+  - `dial()` call seeded in `twiml.py` — the SDK shape only the AST scanner
+    catches: run
+    [32898787431](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/32898787431),
+    all four `tests` matrix cells red via `test_no_outbound`, textloop and
+    lint green. This is the "`<Dial>` verb fails CI" exit criterion.
+  - Flipped `expect_phase` in `simscammer/scripts.py`: run
+    [32898789782](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/32898789782),
+    the `textloop` gate red (the `tests` cells also red via
+    `test_call_scripts`, as expected), lint green.
+  - Unused `import os` appended to `shared/enums.py`: run
+    [32899010924](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/32899010924),
+    only `ruff check` red. The first attempt at this seed (run
+    [32898792333](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/32898792333),
+    green) was defective — the seeding script inserted the import inside the
+    module docstring, so there was genuinely nothing to flag; the green run
+    caught the bad seed, which is the red-proof rule working as intended.
 - **Escalations:** none. (B-F2 was resolved by recording the owner's
   already-made workflow decision, not by making a new one.)
 
@@ -103,8 +120,11 @@ From `roadmap.md` Phase 1, read under the recorded direct-to-main decision
 (roadmap header): "merge-blocking" = push-gated, PR-phrased proofs run on
 throwaway branches.
 
-- [ ] CI runs on every push and gates all work, and a deliberate throwaway
-  branch introducing a `<Dial>` verb fails it.
+- [x] CI runs on every push and gates all work, and a deliberate throwaway
+  branch introducing a `<Dial>` verb fails it. Evidence: green main run
+  [32897840253](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/32897840253);
+  seeded `dial()` red run
+  [32898787431](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/32898787431).
 - [ ] An injected 404 yields a `NOTICE_TEXT` first verb plus a fired alert; a
   healthy re-probe restores the clip.
 - [ ] A throwaway `002` migration applies to an existing volume; a deliberate
