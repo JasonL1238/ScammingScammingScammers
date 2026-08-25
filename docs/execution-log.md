@@ -114,6 +114,57 @@ in flight would leave no red evidence. Main never contains the regression.
 - **Escalations:** none. (B-F2 was resolved by recording the owner's
   already-made workflow decision, not by making a new one.)
 
+### T1.2 — PII purge + `_env_number` warning
+
+- **Scope:** `.env.example` `OWNER_PII_DENYLIST` real values → placeholders,
+  with the secret-store pointer and the git-history note; the real owner name
+  renamed to fictional data ("Norbert"/"Quill"/`norbert@example.net`) across
+  `tests/helpers.py`, `test_conversation.py`, `test_fiction_pack.py`,
+  `test_persona_director.py`, `test_output_filter.py`, and the
+  `output_filter.py` comment example; `_env_number` now warns on unparseable
+  values (still falling back), with long values length-gated out of the log;
+  new `tests/test_config.py` pinning the warnings, the silent paths, and the
+  known parse-only limit.
+- **Rule 1 review:** two adversaries, cross-refutation. Outcomes:
+  - *A-1/B-1 (converged, survived):* the renamed substring test was strictly
+    weaker than the "Li"-in-"Listen" test it replaced (interior embedding is
+    rejected by either regex anchor alone). **Fixed:** parametrized
+    interior/prefix/suffix probes, mutation-verified so each anchor is
+    individually pinned — strictly stronger than the original.
+  - *A-2 (dropped):* "the completed purge bullet in `roadmap.md` is now
+    stale" — refuted by B: the roadmap pre-disclaims line-number drift, T1.1
+    set the committed precedent (completion lives in this log, the plan stays
+    as written), and re-tensing bullets per task would duplicate this log
+    inside the plan document.
+  - *A-3 (survived, refined by B):* the first warning draft echoed the raw
+    env value verbatim — the branch fires exactly on operator mangling, and
+    one mangling is pasting a secret onto a caps line. **Fixed:** values over
+    16 characters are logged as length-only; companion test asserts a fake
+    key never reaches the log stream.
+  - *B-2 (survived):* the first `helpers.py` comment claimed the tracked
+    tree carries no real owner PII, which the run URLs in this log falsify
+    (the GitHub handle embeds the first name). **Fixed:** claim narrowed to
+    the test data; the URLs stay — they are load-bearing evidence.
+  - *B-3 (survived):* blank/whitespace values were unpinned. **Fixed:**
+    parametrized unset/empty/whitespace silence tests.
+  - *B-4 (dropped as a gate finding, acted on):* `_env_number`'s parse-only
+    semantics predate this diff. A's fail-direction sweep of all 11 call
+    sites found the one lax-direction cell — a zero/negative
+    `PROBATION_HARD_COMMIT_SECONDS` commits to baiting with no triage
+    window. **Resolved:** a `TestKnownLimits` test documents the parse-only
+    contract; range-guarding the probation pair is filed as a named
+    follow-up task.
+  - *B-5 (dropped):* asserting `'5O'` pins `repr` rendering — both agreed
+    the quoting is load-bearing (whitespace mangling stays visible) and the
+    pin survived the A-3 message restructure unchanged.
+- **Verification (executed on the final tree):** 570 collected;
+  py3.13 + `[dev,media]` 568 passed / 2 skipped; `[dev]`-only 569 passed /
+  1 skipped (+13 over T1.1: 11 config tests, 2 anchor probes); textloop
+  `--all-scripts --dry` exit 0; `ruff check .` clean; `rg -in
+  "jason|zenblen" .env.example` empty; repo-wide grep clean outside this
+  log's run URLs.
+- **Escalations:** none. Follow-up filed: range-guard the probation caps.
+
 ### Phase 1 exit-criteria checklist
 
 From `roadmap.md` Phase 1, read under the recorded direct-to-main decision
@@ -129,10 +180,14 @@ throwaway branches.
   healthy re-probe restores the clip.
 - [ ] A throwaway `002` migration applies to an existing volume; a deliberate
   mid-list enum insertion fails the revised sync test.
-- [ ] PII grep over `.env.example` returns nothing.
+- [x] PII grep over `.env.example` returns nothing. Evidence: T1.2 —
+  `rg -in "jason|zenblen" .env.example` exits empty; placeholders carry the
+  secret-store pointer and the git-history note.
 - [ ] `docker compose up --build` succeeds from a clean checkout.
-- [ ] An unparseable numeric env var produces an asserted warning while still
-  falling back to the default.
+- [x] An unparseable numeric env var produces an asserted warning while still
+  falling back to the default. Evidence: T1.2 —
+  `tests/test_config.py::TestEnvNumber` asserts the warning via caplog (typo,
+  float-for-int, and secret-suppression cases) with the fallback value intact.
 - [ ] The geocode script exists and has run against the fiction pack with
   results recorded.
 - [ ] A checked list confirms no doc claims unbuilt behavior in the present

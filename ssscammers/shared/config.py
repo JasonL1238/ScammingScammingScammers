@@ -45,6 +45,19 @@ def _env_number(name: str, default: _Number) -> _Number:
     try:
         return type(default)(raw)
     except ValueError:
+        # Echo short values only: this branch runs exactly when an operator
+        # mangled .env, and one such mangling is pasting a secret onto a caps
+        # line — the log stream must never capture it. Every valid numeric
+        # shape fits well inside the cutoff, so diagnostics lose nothing.
+        shown = repr(raw) if len(raw) <= 16 else f"a {len(raw)}-character value (not shown)"
+        logger.warning(
+            "%s=%s is not a valid %s; using %r — check for a typo, because a mistyped "
+            "cap silently reverts to a default that may be laxer than intended",
+            name,
+            shown,
+            type(default).__name__,
+            default,
+        )
         return default
 
 

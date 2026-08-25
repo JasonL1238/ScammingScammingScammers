@@ -146,7 +146,7 @@ class OutputFilter:
     def __post_init__(self) -> None:
         terms = [term.strip() for term in self.owner_pii if term and term.strip()]
         if terms:
-            # Longest first so "jason@zenblen.com" wins over a bare "jason".
+            # Longest first so "norbert@example.net" wins over a bare "norbert".
             terms.sort(key=len, reverse=True)
             joined = "|".join(re.escape(term) for term in terms)
             self._pii_pattern = re.compile(rf"(?<!\w)(?:{joined})(?!\w)", re.IGNORECASE)

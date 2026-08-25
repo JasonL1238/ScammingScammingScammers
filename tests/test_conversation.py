@@ -892,12 +892,12 @@ class TestTheOwnersRealNumberIsUnspeakable:
         from ssscammers.shared.config import Settings
 
         settings = Settings(
-            owner_pii_denylist=("Jason",), owner_real_number="+19375550199"
+            owner_pii_denylist=("Norbert",), owner_real_number="+19375550199"
         )
-        assert set(_owner_pii(settings)) == {"Jason", "+19375550199"}
+        assert set(_owner_pii(settings)) == {"Norbert", "+19375550199"}
 
     def test_an_unset_number_adds_nothing(self) -> None:
         from ssscammers.agent.conversation import _owner_pii
         from ssscammers.shared.config import Settings
 
-        assert _owner_pii(Settings(owner_pii_denylist=("Jason",))) == ("Jason",)
+        assert _owner_pii(Settings(owner_pii_denylist=("Norbert",))) == ("Norbert",)

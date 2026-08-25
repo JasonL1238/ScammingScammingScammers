@@ -92,7 +92,7 @@ class TestPersonaCanReciteItsOwnFactSheet:
     @pytest.mark.parametrize("index", range(25))
     def test_fact_sheet_passes_the_pre_tts_filter(self, index: int) -> None:
         identity = generate_identity(f"recite-{index}", seed=1000 + index)
-        filt = OutputFilter.for_identity(identity, owner_pii=["Jason"], rng=random.Random(0))
+        filt = OutputFilter.for_identity(identity, owner_pii=["Norbert"], rng=random.Random(0))
 
         result = filt.check(identity.to_prompt_block())
 

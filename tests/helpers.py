@@ -24,7 +24,8 @@ CALLER = "+19375559999"
 RESERVED_CALLER = "+19375550101"
 
 #: Stands in for the owner's real name, which the output filter must never speak.
-OWNER_PII: tuple[str, ...] = ("Jason",)
+#: Deliberately fictional — the test data carries no real owner PII.
+OWNER_PII: tuple[str, ...] = ("Norbert",)
 
 SAFEWORD = "pineapple"
 

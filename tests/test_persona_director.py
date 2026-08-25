@@ -173,7 +173,7 @@ class TestStalling:
 class TestOutputVetting:
     def test_a_leaked_owner_name_never_reaches_the_line(self) -> None:
         d = director()
-        assert "Jason" not in d.vet_result("Oh, you want Jason? He's out.").text
+        assert "Norbert" not in d.vet_result("Oh, you want Norbert? He's out.").text
 
     def test_a_working_card_number_never_reaches_the_line(self) -> None:
         d = director()

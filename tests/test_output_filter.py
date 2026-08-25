@@ -18,7 +18,7 @@ from ssscammers.shared.output_filter import FUMBLE_LINES, OutputFilter, Violatio
 @pytest.fixture
 def filt() -> OutputFilter:
     return OutputFilter(
-        owner_pii=["Jason", "Li", "jason@zenblen.com", "Maple Street"],
+        owner_pii=["Norbert", "Quill", "norbert@example.net", "Maple Street"],
         rng=random.Random(0),
     )
 
@@ -129,22 +129,37 @@ class TestKnownLimits:
 
 class TestOwnerPii:
     def test_blocks_the_owners_name(self, filt: OutputFilter) -> None:
-        result = filt.check("Oh, you want Jason? He's not in right now.")
+        result = filt.check("Oh, you want Norbert? He's not in right now.")
         assert result.blocked
         assert Violation.OWNER_PII in result.violations
 
     def test_blocks_the_owners_email(self, filt: OutputFilter) -> None:
-        result = filt.check("You can write to jason@zenblen.com about it.")
+        result = filt.check("You can write to norbert@example.net about it.")
         assert result.blocked
         assert Violation.OWNER_PII in result.violations
 
     def test_matching_is_case_insensitive(self, filt: OutputFilter) -> None:
-        assert filt.check("JASON isn't here").blocked
+        assert filt.check("NORBERT isn't here").blocked
 
-    def test_does_not_fire_on_substrings_of_other_words(self, filt: OutputFilter) -> None:
-        # "Li" must not match inside "listen" — a denylist that trips on common
-        # fragments would block most of the persona's speech.
-        result = filt.check("Listen dear, I'm a little hard of hearing.")
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # Interior: "quill" inside "tranquilly" — either anchor alone rejects it.
+            "The afternoons pass tranquilly here, dear.",
+            # Prefix: "quill" starting "quilling" — only the trailing lookahead
+            # rejects it, so this case fails if that anchor is ever dropped.
+            "The quilling class starts at noon, dear.",
+            # Suffix: "Quill" ending "MacQuill" — only the leading lookbehind
+            # rejects it, so this case fails if that anchor is ever dropped.
+            "That'll be old MacQuill from the bowls club, dear.",
+        ],
+    )
+    def test_does_not_fire_on_substrings_of_other_words(
+        self, filt: OutputFilter, text: str
+    ) -> None:
+        # A denylist that trips on fragments of longer words would block most of
+        # the persona's speech; each case above pins one boundary anchor.
+        result = filt.check(text)
         assert result.allowed
 
 
@@ -187,7 +202,7 @@ class TestBlockedOutputStaysInCharacter:
         assert "error" not in result.text.lower()
 
     def test_scanner_crash_fails_closed(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        filt = OutputFilter(owner_pii=["Jason"], rng=random.Random(0))
+        filt = OutputFilter(owner_pii=["Norbert"], rng=random.Random(0))
 
         def boom(*_args: object, **_kwargs: object) -> None:
             raise RuntimeError("scanner exploded")
@@ -203,6 +218,6 @@ class TestBlockedOutputStaysInCharacter:
 
 class TestMultipleViolations:
     def test_reports_every_reason_it_blocked(self, filt: OutputFilter) -> None:
-        result = filt.check("Jason's card is 4111 1111 1111 1111.")
+        result = filt.check("Norbert's card is 4111 1111 1111 1111.")
         assert Violation.OWNER_PII in result.violations
         assert Violation.VALID_CARD in result.violations
