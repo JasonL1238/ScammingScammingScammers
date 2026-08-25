@@ -8,7 +8,17 @@
 > plane and no LiveKit — see [`../README.md`](../README.md) for the layout that exists and
 > the design-name mapping.
 >
-> Milestones M0–M5 are still the roadmap, with one criterion superseded: **M2's barge-in**
+> The remaining work is sequenced in [`roadmap.md`](roadmap.md), which is the active
+> execution plan; this document stays the design record it draws on. The roadmap's
+> "Honest rescopes and escalations" section supersedes more of this document than the
+> notes below do — admission-time acoustic screening, M4's script-stage bandit context,
+> M5's speaker embeddings, the two-tier LLM router, wallet-address intelligence, and
+> the canonical log's scope (decision-layer replay; audio ground truth lives in the
+> recording) are all rescoped or escalated there. Read it before working any M3–M5
+> item or the quality-bar section.
+>
+> Milestones M0–M5 still name the shape of the work, with one criterion superseded in
+> this document's own notes: **M2's barge-in**
 > is deliberately disabled today (`should_interrupt=False` in
 > [`media.py`](../ssscammers/agent/media.py)). Re-enabling it without first making the turn
 > executor cancellation-safe reproduces a G-11 failure — Pipecat cancels the task running a

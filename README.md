@@ -37,7 +37,8 @@ scammer dials ─► Twilio ─► POST /twilio/voice
 
 The design doc names components by role; on disk they are Python-importable packages.
 Rows marked *planned* are designed in [`docs/plan.md`](docs/plan.md) and not in the repo
-yet — nothing imports them.
+yet — nothing imports them. The build order for everything still to come is
+[`docs/roadmap.md`](docs/roadmap.md).
 
 | Design name | On disk |
 |---|---|
