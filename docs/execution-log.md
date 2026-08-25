@@ -470,6 +470,67 @@ in flight would leave no red evidence. Main never contains the regression.
   removal.
 - **Escalations:** none.
 
+### T1.7 — Enum-sync test redesign
+
+- **Scope:** `tests/test_schema_enums.py` rewritten from a single-file
+  exact-order regex parse to a cumulative multi-migration model: discovery
+  through `ssscammers.db.files.ordered_migrations` (the T1.5 convergence
+  promise, now true and re-tensed in both docstrings), `CREATE TYPE`
+  initializes and `ALTER TYPE … ADD VALUE` appends, and every evolution the
+  append-only contract forbids is a `SchemaSyncError`. The parser **fails
+  closed**: SQL is lexed first (comments and string prose contribute
+  nothing; `files.stripped_sql` gained public `keep_strings` /
+  `keep_dollar_bodies` modes), any `CREATE/ALTER/DROP TYPE` outside a
+  fully-parsed span is refused (qualified/quoted names, exotic spellings,
+  unterminated statements), an `ADD VALUE` action must be *fully* consumed
+  (valid-PG mid-list spellings like `BEFORE E'x'` / `AFTER $$y$$` refuse
+  rather than mis-model as appends), and type DDL inside a dollar-quoted
+  body — which executes at migration time — is refused outright.
+  Retention and headline-view guards hardened (every key occurrence must be
+  the pinned seed tuple; exactly one `wasted_time` definition, qualified
+  spellings counted). Both mirroring directions gated: every SQL enum in
+  PAIRS, every `shared.enums` StrEnum in PAIRS (explicit empty
+  `not_persisted` escape hatch). 26 meta-tests prove each refusal bites.
+- **Rule 1 review** (two adversaries, three rounds, every finding with an
+  executed repro):
+  - *Converged round-1 headline:* the first rewrite parsed **raw** SQL and
+    failed **open** — B's end-to-end demo (legal Python append + a real 002
+    containing only a commented-out `ALTER … ADD VALUE`) passed 23/23 green
+    while the database never received the value: the exact runtime insert
+    error this test exists to prevent. A independently demonstrated
+    qualified-name blindness (`public.mood` renames/drops invisible —
+    pg_dump-paste realism). **Fixed** via the lexed pipeline + the
+    unconsumed-span guard; B's re-run of its demo now fails RED.
+  - *A's round-2 sweep:* three more executed defects — DO-body DDL blanked
+    into invisibility (the pre-PG12 idempotent-enum idiom), the
+    optional-tail `_ADD_VALUE` search mis-modeling valid mid-list operand
+    spellings as appends (piercing the exit criterion), and the view fork
+    guard blind to qualified names. **All fixed** with meta-tests; A's
+    closing round attacked the fixes (nested/mismatched dollar tags,
+    fully-consumed evader hunt, quoted-schema spellings) and cleared them.
+  - *The A/B disagreement, argued to ground:* A's Python→PAIRS sweep
+    (B initially dropped it as no-concrete-scenario). Sided with A; B probed
+    the implementation (forged-`__module__` bite test, re-export ignore
+    test) and **withdrew** — PAIRS is now a gated registry, not a
+    convention.
+  - *B's honesty catch:* the coordinator claimed the trailing-newline fix
+    was applied when it was not — a false verification claim, caught by
+    byte inspection, now actually fixed and re-verified by A. Recorded as
+    the reason fix reports get re-checked.
+  - *Recorded residuals (below threshold, reasons on file):* LIKE-spelling
+    retention evasion (needs semantic SQL), dynamic-SQL `EXECUTE` concat
+    inside bodies (deliberate-evader class), quoted-*schema* view spelling
+    (never emitted by pg_dump), DDL split across bodies (not executable),
+    and a pre-existing `stripped_sql` `$`-in-identifier lexer divergence
+    (effectively unreachable by accident; fix shape on file: tag opener
+    only at a token boundary).
+- **Verification (final tree):** 77 passed across the two migration/schema
+  modules; 667 passed / 16 skipped full suite; textloop dry exit 0;
+  `ruff check .` clean. Exit-criterion simulation executed twice by B:
+  mid-list `ScamType` insertion → `test_sql_enum_matches_python[scam_type]`
+  RED with the guiding message; restore verified byte-identical by sha256.
+- **Escalations:** none.
+
 ### Phase 1 exit-criteria checklist
 
 From `roadmap.md` Phase 1, read under the recorded direct-to-main decision
@@ -486,12 +547,14 @@ throwaway branches.
   composes all three assertions
   (`test_the_lifespan_probes_at_boot_and_degrades_on_a_404`), and the live
   process demonstration reproduced degrade-then-recover over real sockets.
-- [~] A throwaway `002` migration applies to an existing volume *(done at
-  T1.5: `test_a_002_applies_onto_an_existing_volume` baselines 001 and
-  applies an `ALTER TYPE … ADD VALUE` 002 onto a simulated initdb-era volume,
-  in CI on every push; the live compose volume was baselined and kept)*; a
-  deliberate mid-list enum insertion fails the revised sync test *(T1.7 — the
-  sync-test redesign)*.
+- [x] A throwaway `002` migration applies to an existing volume *(T1.5:
+  `test_a_002_applies_onto_an_existing_volume` baselines 001 and applies an
+  `ALTER TYPE … ADD VALUE` 002 onto a simulated initdb-era volume, in CI on
+  every push; the live compose volume was baselined and kept)*; a deliberate
+  mid-list enum insertion fails the revised sync test *(T1.7: executed twice
+  — `test_sql_enum_matches_python[scam_type]` goes RED on a mid-list
+  `ScamType` insertion with a message directing the fix to the end of the
+  enum; red-proof branch evidence recorded below after push)*.
 - [x] PII grep over `.env.example` returns nothing. Evidence: T1.2 —
   `rg -in "jason|zenblen" .env.example` exits empty; placeholders carry the
   secret-store pointer and the git-history note.

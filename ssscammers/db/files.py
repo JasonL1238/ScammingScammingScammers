@@ -1,8 +1,8 @@
 """Discovery and validation of ``db/migrations/`` — stdlib-only, by contract.
 
-Written to be importable by the safety suite with zero third-party packages
-(the enum-sync test converges on it in the Phase 1 redesign); anything needing a
-database driver lives in :mod:`ssscammers.db.runner` instead.
+Importable by the safety suite with zero third-party packages — the enum-sync
+test (``tests/test_schema_enums.py``) discovers migrations through this module;
+anything needing a database driver lives in :mod:`ssscammers.db.runner` instead.
 
 The rules enforced here exist because migrations are append-only history:
 
@@ -31,7 +31,13 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-__all__ = ["Migration", "MigrationFileError", "MIGRATIONS_DIR", "ordered_migrations"]
+__all__ = [
+    "Migration",
+    "MigrationFileError",
+    "MIGRATIONS_DIR",
+    "ordered_migrations",
+    "stripped_sql",
+]
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "db" / "migrations"
 
@@ -46,16 +52,23 @@ including the spellings ``START TRANSACTION``, ``BEGIN WORK``, ``COMMIT WORK``,
 _DOLLAR_TAG = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$")
 
 
-def _strip_non_sql(sql: str) -> str:
-    """Blank out strings, dollar-quoted bodies, and comments in one pass.
+def stripped_sql(
+    sql: str, *, keep_strings: bool = False, keep_dollar_bodies: bool = False
+) -> str:
+    """Blank out comments (and, by default, strings and dollar-quoted bodies).
 
     A single positional walk, deliberately not sequential regex passes: passes
     can be blinded by constructs that span each other — a ``--`` inside a string
     literal would eat the rest of its line, a dollar tag mentioned in a comment
     would pair with a later literal's tag — and a blinded scan fails in the
-    unsafe direction, letting transaction control through. An *unterminated*
-    construct swallows the rest of the file here, which is safe: it is invalid
-    SQL, so the migration fails loudly and atomically at execute time.
+    unsafe direction. Every construct is *lexed* in every mode (so its contents
+    never masquerade as something else); the keep flags control emission:
+    ``keep_strings=True`` emits literals verbatim for callers that must read
+    quoted values, and ``keep_dollar_bodies=True`` emits procedural bodies
+    verbatim for callers that must see what executes inside them (a ``DO``
+    block runs at migration time — it is not a comment). An *unterminated*
+    construct swallows the rest of the file, which is safe: it is invalid SQL,
+    so the migration fails loudly and atomically at execute time.
     """
     out: list[str] = []
     i, n = 0, len(sql)
@@ -75,13 +88,15 @@ def _strip_non_sql(sql: str) -> str:
                 if sql[j] == "'" and sql[j : j + 2] != "''":
                     break
                 j += 2 if sql[j : j + 2] == "''" else 1
-            i = j + 1 if j < n else n
-            out.append("''")
+            end = j + 1 if j < n else n
+            out.append(sql[i:end] if keep_strings else "''")
+            i = end
         elif sql[i] == "$" and (match := _DOLLAR_TAG.match(sql, i)):
             tag = match.group(0)
             j = sql.find(tag, i + len(tag))
-            i = n if j == -1 else j + len(tag)
-            out.append(" ")
+            end = n if j == -1 else j + len(tag)
+            out.append(sql[i:end] if keep_dollar_bodies else " ")
+            i = end
         else:
             out.append(sql[i])
             i += 1
@@ -90,7 +105,7 @@ def _strip_non_sql(sql: str) -> str:
 
 def _transaction_violation(sql: str) -> str | None:
     """The first transaction-control statement in ``sql``, or ``None``."""
-    for fragment in _strip_non_sql(sql).split(";"):
+    for fragment in stripped_sql(sql).split(";"):
         words = fragment.split()
         if not words:
             continue
