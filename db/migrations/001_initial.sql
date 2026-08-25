@@ -6,8 +6,9 @@
 --
 -- The enum values below mirror ssscammers/shared/enums.py by hand, and a test
 -- fails the build if the two drift apart. Edit the Python, then edit here.
-
-BEGIN;
+--
+-- No BEGIN/COMMIT here: the runner (ssscammers/db) wraps each migration in its
+-- own transaction, committed atomically with the schema_migrations tracking row.
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
@@ -328,5 +329,3 @@ SELECT
 FROM calls c
 LEFT JOIN scam_classifications sc ON sc.call_id = c.id
 LEFT JOIN call_enrichments     e  ON e.call_id  = c.id;
-
-COMMIT;

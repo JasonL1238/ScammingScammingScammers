@@ -306,6 +306,80 @@ in flight would leave no red evidence. Main never contains the regression.
   `--all-scripts --dry` exit 0; `ruff check .` clean.
 - **Escalations:** none.
 
+### T1.5 — Migration runner
+
+- **Scope:** new `ssscammers/db/` — stdlib-only `files.py` (discovery,
+  rigid `NNN_lower_snake.sql` names, contiguous-from-001 numbering, sha256
+  checksums, a single-pass lexical ban on transaction-control statements)
+  split from asyncpg-backed `runner.py` (advisory lock, self-created
+  `schema_migrations`, three-state baseline for initdb-era volumes,
+  per-migration transaction with the tracking row committed atomically,
+  checksum-frozen applied migrations) and a `python -m ssscammers.db` CLI;
+  `001_initial.sql` stripped of `BEGIN;`/`COMMIT;`; `db` extra (asyncpg);
+  new CI `migrations` job (postgres service container, py3.11+3.13,
+  skip-proof grep guard); 44 tests (20 file-contract, 24 PG-backed).
+- **Rule 1 review** (two adversaries, cross-refutation, two cascade rounds;
+  every finding carried an executed repro):
+  - *A-F1 (survived, then strengthened twice):* the first txn ban covered
+    two exact spellings; A smuggled `ROLLBACK;` through it producing a
+    migration *recorded but never applied*, and `COMMIT;`-then-fail leaving
+    a half-applied change. The fix broadened to statement-leading keywords
+    over stripped SQL; A then blinded the sequential regex passes three
+    ways (a `--` inside a string eating a following `COMMIT` being the
+    least exotic), and B independently proved two more defects in the same
+    regexes ($$-tag false positives, named-tag bracketing). **Final form:**
+    a single positional lexer (`_strip_non_sql`) that both adversaries
+    re-attacked — 17 cases, no surviving evasion; `PREPARE TRANSACTION`
+    banned as a two-token check; unterminated constructs documented as
+    failing safe at execute time.
+  - *A-F2/B-F1 (converged, survived):* the baseline sentinel (`personas`,
+    the FIRST table 001 creates) certified half-built schemas — and this
+    diff itself opened the window by de-atomizing the still-mounted initdb
+    apply. **Fixed:** three-state check on `wasted_time` (the LAST object);
+    half-applied volumes are refused with a hard error in both real and dry
+    paths. The foreign-database guard was dropped with recorded reason
+    (false-positives on legitimately shared databases; misdirection costs
+    clutter, not destruction) — B accepted the drop.
+  - *A-F3 (survived → mechanical):* until T1.6 removes the initdb mount, a
+    committed 002 wedges fresh-volume bring-up. First fixed as a docstring
+    fence; A pushed for mechanics — now a **self-dissolving test**: while
+    compose contains the mount, `ordered_migrations()` must have length 1;
+    the guard skips itself when the mount line disappears.
+  - *A-F4/B-F3 (converged, survived):* `pytest -m migrations` exits 0 when
+    everything skips — a vacuous gate. **Fixed:** the job greps its own
+    output (requires "N passed", forbids "N skipped"), verified
+    mechanically by both adversaries; matrixed over py3.11/3.13 (B-F5).
+  - *A-F5..F8 (survived):* CLI tracebacks for routine failures → clean
+    messages (PostgresError/InterfaceError/MigrationFileError); non-UTF-8
+    files → contract error; enum add-then-use and
+    no-CONCURRENTLY/VACUUM caveats documented; false "the enum-sync test
+    imports this" claim re-tensed.
+  - *B-F2 (survived):* the advisory lock had zero coverage — a no-lock
+    mutant passed the suite. **Fixed:** a racing-runners test that kills
+    the mutant deterministically (verified 3/3 by A, 6/6 by B; 001's
+    non-idempotent CREATE TYPEs make the collision reliable).
+  - *B-F4 (survived):* docs falsified by the diff — roadmap's
+    initdb-emergency goal fact "(closed at T1.5)", README's CI list and
+    layout row, `config.py`'s database_url docstring. **Fixed.**
+  - *B's cascade catch:* the new CLI docstring claimed the compose
+    `migrate` service exists (T1.6 work) — the T1.3 defect class,
+    introduced by T1.5's own fix prose. **Re-tensed.**
+  - *B-F6 (deferred with recorded constraint):* the `parents[2]` repo-root
+    assumption breaks under a non-editable install that discards the source
+    tree; deferral to T1.6 accepted by both adversaries **on the condition**
+    that the T1.6 image keeps the source at `/app` and its clean-checkout
+    test actually reaches `ordered_migrations()` (the compose migrate
+    one-shot does exactly that).
+- **Live demonstration:** the compose initdb volume (fresh `pgdata`, 001
+  applied raw by the entrypoint) → first runner run baselined 001 without
+  re-execution, second run reported up-to-date; tracking row `baselined=t`
+  with the post-edit checksum. Volume kept for T1.6's existing-volume test.
+- **Verification (final tree):** 653 passed / 2 skipped with
+  `MIGRATIONS_TEST_DATABASE_URL` against a real postgres:16 container
+  (641 / 14 without — PG tests skip locally); textloop dry exit 0;
+  `ruff check .` clean.
+- **Escalations:** none.
+
 ### Phase 1 exit-criteria checklist
 
 From `roadmap.md` Phase 1, read under the recorded direct-to-main decision
@@ -322,8 +396,12 @@ throwaway branches.
   composes all three assertions
   (`test_the_lifespan_probes_at_boot_and_degrades_on_a_404`), and the live
   process demonstration reproduced degrade-then-recover over real sockets.
-- [ ] A throwaway `002` migration applies to an existing volume; a deliberate
-  mid-list enum insertion fails the revised sync test.
+- [~] A throwaway `002` migration applies to an existing volume *(done at
+  T1.5: `test_a_002_applies_onto_an_existing_volume` baselines 001 and
+  applies an `ALTER TYPE … ADD VALUE` 002 onto a simulated initdb-era volume,
+  in CI on every push; the live compose volume was baselined and kept)*; a
+  deliberate mid-list enum insertion fails the revised sync test *(T1.7 — the
+  sync-test redesign)*.
 - [x] PII grep over `.env.example` returns nothing. Evidence: T1.2 —
   `rg -in "jason|zenblen" .env.example` exits empty; placeholders carry the
   secret-store pointer and the git-history note.

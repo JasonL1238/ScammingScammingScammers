@@ -143,8 +143,10 @@ them here is the plan; building around them silently would be planning fiction.
 **Goal.** Close the live gaps that must not wait one more phase, and make every later
 gate real. Three facts forced this to the front: at this plan's writing there was **no
 CI configuration in the repo** despite `legal.md` and `guardrails.md` claiming
-CI-enforced gates (closed at T1.1); migrations apply only via initdb on a fresh volume,
-so the first post-deploy schema change would be an emergency; and a `NOTICE_AUDIO_URL`
+CI-enforced gates (closed at T1.1); migrations applied only via initdb on a fresh
+volume, so the first post-deploy schema change would have been an emergency (closed at
+T1.5 — the runner tracks, baselines, and applies; the initdb mount's removal is T1.6's);
+and a `NOTICE_AUDIO_URL`
 that is fetchable at boot but 404s at call time records real people with no notice — a
 legal-notice hole (closed at T1.4; the residual exposure is one probe interval).
 

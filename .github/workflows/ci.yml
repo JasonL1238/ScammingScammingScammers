@@ -54,6 +54,49 @@ jobs:
       - run: python -m pip install -e .
       - run: python -m ssscammers.simscammer.textloop --all-scripts --dry
 
+  migrations:
+    name: migration runner (postgres, py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.13"]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ssscammers
+          POSTGRES_PASSWORD: ssscammers
+          POSTGRES_DB: ssscammers
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U ssscammers"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      MIGRATIONS_TEST_DATABASE_URL: postgresql://ssscammers:ssscammers@localhost:5432/ssscammers
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install -e ".[dev,db]"
+      # The grep guards make a vacuous pass impossible: an env-var rename on
+      # either side (here or in the test module) or a lost asyncpg install
+      # would otherwise skip every test and leave this job green while
+      # verifying nothing.
+      - name: run the migration suite (skips are failures here)
+        run: |
+          set -o pipefail
+          python -m pytest -m migrations 2>&1 | tee pytest-migrations.txt
+          grep -qE "[1-9][0-9]* passed" pytest-migrations.txt
+          ! grep -qE "[1-9][0-9]* skipped" pytest-migrations.txt
+
   lint:
     name: ruff check
     runs-on: ubuntu-latest

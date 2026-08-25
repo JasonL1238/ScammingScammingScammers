@@ -156,9 +156,10 @@ class Settings:
 
     # --- Storage ---
     database_url: str = ""
-    """**Not used yet.** Nothing reads this: the persistence layer is scheduled
-    roadmap work and nothing imports a database driver today. Kept loaded so the
-    seam stays on record."""
+    """**Not read by the agent.** The call path never touches a database; the
+    agent-side persistence layer is scheduled roadmap work. The migration runner
+    (``python -m ssscammers.db``) reads ``$DATABASE_URL`` from the environment
+    directly — a one-shot tool deliberately not coupled to agent settings."""
 
     # --- Notifications. Values only: the HTTP client lives in agent/notify.py,
     # because this module must stay importable with zero third-party packages. ---

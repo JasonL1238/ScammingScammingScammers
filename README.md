@@ -49,7 +49,7 @@ yet — nothing imports them. The build order for everything still to come is
 | persona bundles | [`personas/`](personas) — one directory per persona (prompt + config + sound pack) |
 | shared playbooks | [`playbooks/`](playbooks) — cached prompt fragments: stalling tactics, scam types |
 | fiction data pack | [`data/fiction_pack/`](data/fiction_pack) — the only "personal data" the agent may speak |
-| DB schema | [`db/migrations/`](db/migrations) |
+| DB schema | [`db/migrations/`](db/migrations), applied by [`ssscammers/db/`](ssscammers/db) (`python -m ssscammers.db`) |
 | dashboard | `dashboard/` — Next.js, private (Tailscale) (*planned*) |
 
 ## Getting started
@@ -68,8 +68,8 @@ call.
 
 Every push runs CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)): the full
 suite in both install shapes (with and without the media extra), the simscammer
-release gate (`--all-scripts --dry`), and ruff. A red run on `main` blocks all other
-work until fixed.
+release gate (`--all-scripts --dry`), the migration-runner suite against a real
+PostgreSQL, and ruff. A red run on `main` blocks all other work until fixed.
 
 ### Judge a persona without a phone line
 
