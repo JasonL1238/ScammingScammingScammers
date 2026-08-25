@@ -40,6 +40,12 @@ include = ["ssscammers*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# The import mode is pinned to the one the suite is proven under (prepend is
+# pytest's current default) so an upstream default change cannot alter
+# collection semantics silently. The pin is a declaration, not a mechanism:
+# `from helpers import ...` resolves in every mode via the sys.path insert in
+# tests/conftest.py.
+addopts = "--import-mode=prepend"
 filterwarnings = ["error::DeprecationWarning:ssscammers.*"]
 
 [tool.ruff]

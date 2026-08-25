@@ -84,6 +84,9 @@ not actually run.
 - Never claim a check (test, lint, typecheck) that you did not actually run.
 - Run the cheapest relevant test first, then widen — file, scoped lint/types, full suite
   only when warranted.
+- The cheapest-first rule governs iteration; what must be green before any commit is the
+  standing verification loop in `docs/execution-log.md` (full suite, the textloop dry
+  gate, ruff, and the compose checks when docker files changed).
 
 ## Changing code safely
 

@@ -10,6 +10,15 @@
 > ends with a working, tested increment. File and line references are accurate as of
 > this commit; the named symbols are the durable anchors when later phases move code.
 
+> **Owner decision (2026-08-25): direct-to-main workflow.** Work lands on `main`
+> directly, one commit per reviewed task, with no pull requests and no branch
+> protection. "Merge-blocking" throughout this document therefore reads as
+> **push-gated**: CI runs on every push, and a red run on `main` halts all other work
+> until fixed — a process rule enforced by the execution log
+> ([`execution-log.md`](execution-log.md)), not a repository setting. Exit criteria
+> phrased as "a deliberate PR … fails CI" are met by the same seeded regression pushed
+> on a throwaway branch, with the red run recorded before the branch is deleted.
+
 ## Workstreams
 
 Every open item from the survey of the repo, lettered so phases can reference them:

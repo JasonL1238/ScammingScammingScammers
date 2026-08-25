@@ -66,6 +66,11 @@ state machine, triage, the conversation driver, and the webhook routing). Instal
 realtime stack with `pip install -e ".[media,dev]"` when you're ready to run an actual
 call.
 
+Every push runs CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)): the full
+suite in both install shapes (with and without the media extra), the simscammer
+release gate (`--all-scripts --dry`), and ruff. A red run on `main` blocks all other
+work until fixed.
+
 ### Judge a persona without a phone line
 
 ```bash

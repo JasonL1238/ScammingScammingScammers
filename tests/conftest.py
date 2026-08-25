@@ -1,11 +1,10 @@
 """Path setup, plus the fixtures every test module may need.
 
-Makes ``from helpers import ...`` work whatever import mode pytest is run in.
-
-With the default ``prepend`` import mode pytest already puts this directory on
-``sys.path``, so the import happens to resolve. That is a coincidence of configuration,
-not a guarantee: ``--import-mode=importlib`` (and adding a ``tests/__init__.py``) stops it,
-and the failure is an ImportError at collection — the whole suite, not one test.
+Makes ``from helpers import ...`` work whatever import mode pytest is run in —
+the ``sys.path.insert`` below is the mechanism. Without it the import resolves
+only under the default ``prepend`` mode (which happens to put this directory on
+``sys.path``); under ``--import-mode=importlib``, or with a ``tests/__init__.py``,
+the failure would be an ImportError at collection — the whole suite, not one test.
 """
 
 from __future__ import annotations
