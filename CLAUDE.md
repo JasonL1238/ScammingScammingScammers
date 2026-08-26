@@ -91,10 +91,11 @@ not actually run.
 ## Changing code safely
 
 - Search for an existing type, utility, or service before writing a new one. Shared test
-  helpers live in `tests/helpers.py` (`FakeClock`, `make_director`, `reserve_call`,
-  `UNSERVABLE_BUNDLE`)
-  and shared pytest *fixtures* in `tests/conftest.py` (`unservable_persona`) — reuse them rather
-  than rolling a third clock or a fourth director.
+  helpers live in `tests/helpers.py` (`make_director`, `reserve_call`,
+  `UNSERVABLE_BUNDLE`) and shared pytest *fixtures* in `tests/conftest.py`
+  (`unservable_persona`) — reuse them rather than rolling a fourth director. The ONE
+  simulated clock is `ssscammers/simscammer/clock.py`'s `SimulatedClock`, shared by the
+  harness and the suite (re-exported from `tests/helpers.py`); never write a second.
 - Remove code only after a caller search plus a test or clear static proof it's dead.
 - Preserve behavior when extracting duplicates; don't rewrite unrelated code while you're
   in there.

@@ -16,6 +16,22 @@ from ssscammers.agent.persona_director import PersonaDirector
 from ssscammers.agent.registry import Admission, CallRegistry
 from ssscammers.shared.enums import EntryPath
 
+# Re-exported for the test suite: the ONE simulated clock, shared with the
+# textloop harness. There must never be a second implementation — the replay
+# work runs the same call under both, so they must be the same object.
+from ssscammers.simscammer.clock import SimulatedClock
+
+__all__ = [
+    "CALLER",
+    "RESERVED_CALLER",
+    "OWNER_PII",
+    "SAFEWORD",
+    "SimulatedClock",
+    "make_director",
+    "reserve_call",
+    "UNSERVABLE_BUNDLE",
+]
+
 #: The caller number every offline test dials from. Not on any allowlist.
 CALLER = "+19375559999"
 
@@ -28,24 +44,6 @@ RESERVED_CALLER = "+19375550101"
 OWNER_PII: tuple[str, ...] = ("Norbert",)
 
 SAFEWORD = "pineapple"
-
-
-class FakeClock:
-    """A monotonic clock a test winds forward by hand.
-
-    Injected wherever production reads ``time.monotonic``, which is what lets a
-    ninety-minute call, a sixty-second dead-air window, and a ninety-second hold all be
-    exercised in the same millisecond.
-    """
-
-    def __init__(self, now: float = 1000.0) -> None:
-        self.now = now
-
-    def __call__(self) -> float:
-        return self.now
-
-    def advance(self, seconds: float) -> None:
-        self.now += seconds
 
 
 def make_director(

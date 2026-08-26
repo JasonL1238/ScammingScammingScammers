@@ -7,14 +7,14 @@ stop being taken.
 
 from __future__ import annotations
 
-from helpers import FakeClock, reserve_call
+from helpers import SimulatedClock, reserve_call
 
 from ssscammers.agent.registry import CallRegistry
 from ssscammers.shared.enums import CallPhase, CallStatus, EndReason
 
 
-def make_registry(max_concurrent: int = 2) -> tuple[CallRegistry, FakeClock]:
-    clock = FakeClock()
+def make_registry(max_concurrent: int = 2) -> tuple[CallRegistry, SimulatedClock]:
+    clock = SimulatedClock()
     return CallRegistry(max_concurrent=max_concurrent, clock=clock), clock
 
 

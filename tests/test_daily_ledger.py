@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 import pytest
-from helpers import RESERVED_CALLER, FakeClock, reserve_call
+from helpers import RESERVED_CALLER, SimulatedClock, reserve_call
 
 from ssscammers.agent.daily_ledger import DailyLedger
 from ssscammers.agent.registry import CallRegistry
@@ -231,11 +231,11 @@ class TestTheRegistryHonoursIt:
     """The cap has to bite at admission, which is the only place it can."""
 
     @staticmethod
-    def registry(led: DailyLedger | None, clock: FakeClock | None = None) -> CallRegistry:
-        # `FakeClock` from tests/helpers.py, not a third hand-rolled clock. The iterator
+    def registry(led: DailyLedger | None, clock: SimulatedClock | None = None) -> CallRegistry:
+        # `SimulatedClock` from tests/helpers.py, not a third hand-rolled clock. The iterator
         # version this replaced advanced on every read — `reserve` reads twice — so a
         # banked duration was an accident of call order and could only be asserted as `>0`.
-        return CallRegistry(max_concurrent=5, ledger=led, clock=clock or FakeClock())
+        return CallRegistry(max_concurrent=5, ledger=led, clock=clock or SimulatedClock())
 
     def test_a_capped_day_refuses_and_names_the_cap(self, tmp_path: Path) -> None:
         led = ledger(tmp_path, minutes_cap=1)
@@ -250,7 +250,7 @@ class TestTheRegistryHonoursIt:
 
     def test_releasing_a_call_banks_exactly_its_minutes(self, tmp_path: Path) -> None:
         led = ledger(tmp_path, minutes_cap=60)
-        clock = FakeClock()
+        clock = SimulatedClock()
         reg = self.registry(led, clock)
         reserve_call(reg, "CA1")
         clock.advance(12 * 60)
@@ -273,7 +273,7 @@ class TestTheRegistryHonoursIt:
         # callback never arrived — the exact failure the reaper exists for — were invisible
         # to both the minutes and the spend cap. A run of callback failures blinded them.
         led = ledger(tmp_path, minutes_cap=600)
-        clock = FakeClock()
+        clock = SimulatedClock()
         reg = self.registry(led, clock)
         reserve_call(reg, "CA1")
         clock.advance(reg.stale_after_seconds + 1)

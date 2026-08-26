@@ -903,3 +903,48 @@ Completes roadmap Phase 2 move 2's widening list.
   `ruff check .` clean; T2.1 seed-6 pins and the T2.2 order pin green over the
   widened payloads.
 - **Escalations:** none.
+- **Green on main:** run
+  [32948349976](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/32948349976)
+  (commit `07fe2f9`).
+
+### T2.4 — Clock consolidation
+
+- **Scope:** the two fake clocks became one. `SimulatedClock` now lives in
+  `ssscammers/simscammer/clock.py` (default `now=1000.0` — FakeClock's old
+  non-zero tripwire, kept deliberately and now documented); the textloop's own
+  class is deleted, `Session` gains `seconds_per_turn` (pacing policy belongs
+  on the session, not the clock) and delegates `elapsed` to the production
+  `Conversation.elapsed_seconds`; `tests/helpers.py` re-exports the one class
+  (FakeClock deleted, `__all__` added); renamed across three test modules (all
+  constructions were bare, so the shared 1000.0 default preserves every test
+  bit-for-bit); the CLAUDE.md helper list updated (AGENTS.md hook-mirrored).
+  Exit criterion met: exactly one fake clock class exists repo-wide (grepped);
+  the ledger's injected civil-date provider is the *other* of the roadmap's
+  "both time injections", a different axis, adjudicated not-a-clock.
+- **Rule 1 review** (A returned zero findings after attacking the default flip,
+  the Session restructure, the re-export, and layering — all refuted with
+  probes including a HEAD-vs-worktree byte-diff of a seeded gate run; the
+  round ran one-directional, A refuting B):
+  - *B-1 (survived; A conceded with an output-neutrality byte-diff):* the
+    first draft's `Session._started_at`/delta-elapsed rebuilt the quantity
+    `Conversation.elapsed_seconds` already measures — the "parallel
+    implementation that has since drifted" textloop's own docstring forswears,
+    and the exact latent window A had flagged and dropped. **Fixed as a
+    deletion:** `elapsed` delegates to the production measurement.
+  - *B-3 (survived; A's own mutation probe demolished A's refutation):* a
+    plugin forcing the default to 0.0 left all 719 tests green — the
+    documented non-zero tripwire was guarded by nothing, precisely because
+    every transitive test is delta-based. **Fixed:**
+    `tests/test_simulated_clock.py` pins the truthy default (the load-bearing
+    line, per A's refinement) plus basic read/advance behavior.
+  - *Adjudicated (B, evidence on file):* the clock's home is right — production
+    injects `Callable[[], float]`, so `agent/` never imports `simscammer/`,
+    now or at Phase 7's media-seam work; `shared/` would put a test double in
+    the call-path layer. A "one clock" meta-scanner was rejected as ceremony
+    (hygiene is encoded in CLAUDE.md; the scanner precedent guards G-1, a
+    safety invariant). `roadmap.md`'s mention of `tests/helpers.FakeClock`
+    stays as written per the settled bullets-are-historical policy.
+- **Verification (final tree):** 721 passed / 16 skipped; textloop dry exit 0;
+  `ruff check .` clean; HEAD-vs-worktree seeded gate output byte-identical
+  (adversary-executed).
+- **Escalations:** none.

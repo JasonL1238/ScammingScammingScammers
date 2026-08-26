@@ -13,7 +13,7 @@ import random
 from collections.abc import AsyncIterator
 
 import pytest
-from helpers import FakeClock, make_director
+from helpers import SimulatedClock, make_director
 
 from ssscammers.agent.conversation import (
     Action,
@@ -47,7 +47,7 @@ class ScriptedBrain:
     def __init__(
         self,
         *sentences: str,
-        clock: FakeClock | None = None,
+        clock: SimulatedClock | None = None,
         seconds_per_sentence: float = 0.0,
         raises: Exception | None = None,
         hang: bool = False,
@@ -107,7 +107,7 @@ class RecordingSink:
 def build(
     *,
     brain: ScriptedBrain | None = None,
-    clock: FakeClock | None = None,
+    clock: SimulatedClock | None = None,
     sink: RecordingSink | None = None,
     character_delay_ms: int | None = None,
     hold_probability: float = 0.0,
@@ -115,14 +115,14 @@ def build(
     dead_air_seconds: float = 60.0,
     hard_cap_seconds: float = 5400.0,
     safeword: str = "pineapple",
-) -> tuple[Conversation, FakeClock, RecordingSink]:
+) -> tuple[Conversation, SimulatedClock, RecordingSink]:
     """A conversation with every source of randomness pinned down.
 
     One ``Random(0)`` shared by the director, the filter, and the conversation —
     the same single-stream shape ``build_conversation`` wires in production. Two
     separately seeded streams would pin a draw order production never executes.
     """
-    clock = clock or FakeClock()
+    clock = clock or SimulatedClock()
     sink = sink or RecordingSink()
 
     persona = load_persona("marjorie")
@@ -395,7 +395,7 @@ class TestLatency:
     async def test_character_delay_is_not_added_on_top_of_real_latency(self) -> None:
         # The caller has already had their silence. Adding another second on top is how
         # a slow turn becomes a dead line.
-        clock = FakeClock()
+        clock = SimulatedClock()
         brain = ScriptedBrain("Hello dear.", clock=clock, seconds_per_sentence=2.0)
         conversation, _, _ = build(brain=brain, clock=clock, character_delay_ms=1100)
         await conversation.open()
@@ -921,7 +921,7 @@ class TestSeedAndDrawLogging:
 
         sink = RecordingSink()
         conversation = build_conversation(
-            Settings(), persona_id="marjorie", events=sink, clock=FakeClock(), seed=1234
+            Settings(), persona_id="marjorie", events=sink, clock=SimulatedClock(), seed=1234
         )
         await conversation.open()
         assert conversation.seed == 1234
@@ -949,7 +949,7 @@ class TestSeedAndDrawLogging:
         async def run() -> tuple[list[Action], list[CallEvent]]:
             sink = RecordingSink()
             conversation = build_conversation(
-                Settings(), persona_id="marjorie", events=sink, clock=FakeClock(), seed=6
+                Settings(), persona_id="marjorie", events=sink, clock=SimulatedClock(), seed=6
             )
             conversation.director.state.phase = CallPhase.STALL
             await conversation.open()
@@ -1005,7 +1005,7 @@ class TestSeedAndDrawLogging:
                 persona_id="marjorie",
                 brain=TurnScriptedBrain([card], []),  # type: ignore[arg-type]
                 events=sink,
-                clock=FakeClock(),
+                clock=SimulatedClock(),
                 seed=6,
             )
             conversation.director.state.phase = CallPhase.STALL
@@ -1176,7 +1176,7 @@ class TestPayloadWidening:
         assert set(scripted) == {"text", "scripted"}
 
     async def test_agent_turn_measures_what_the_caller_waited_through(self) -> None:
-        clock = FakeClock()
+        clock = SimulatedClock()
         conversation, _, sink = build(
             brain=ScriptedBrain(
                 "One sentence.", "Two sentences.", clock=clock, seconds_per_sentence=2.0
