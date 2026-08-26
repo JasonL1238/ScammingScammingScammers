@@ -529,6 +529,109 @@ in flight would leave no red evidence. Main never contains the regression.
   `ruff check .` clean. Exit-criterion simulation executed twice by B:
   mid-list `ScamType` insertion → `test_sql_enum_matches_python[scam_type]`
   RED with the guiding message; restore verified byte-identical by sha256.
+- **Green on main:** run
+  [32912969712](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/32912969712)
+  (commit `c4b3699`).
+- **Red proof** (throwaway branch, deleted after the red run completed): a
+  mid-list `PUPPY_DEPOSIT` insertion into `ScamType` — run
+  [32937394369](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/32937394369):
+  all four `tests` matrix cells red via
+  `test_sql_enum_matches_python[scam_type]` (log-verified), migration
+  runner, textloop, and lint green.
+- **Escalations:** none.
+
+### T1.8 — Geocode pre-launch check + phase close-out
+
+- **Scope:** `scripts/check_fiction_geocode.py` — the networked Nominatim check:
+  per identity a full-street structured query and a bare-distinctive-name query;
+  tokens derived from `fiction.STREET_NAMES` itself; per-city ordered canary
+  streets that must produce an `address.road` the matcher recognises; fail-closed
+  on hits, canary misses, network errors, non-list JSON, and streets the
+  vocabulary cannot explain. `tests/test_geocode_check.py` — 21 CI tests:
+  vocabulary coupling, matcher, and the full orchestration over
+  `httpx.MockTransport` with an injected sleep. `fiction.py` — `_STREET_NAMES`
+  promoted to public `STREET_NAMES` (now a contract shared with the checker,
+  stated in its comment) with docstring and `INVARIANTS` pointers to the script.
+  `guardrails.md` — the verification paragraph rewritten as the dated record.
+  Phase close-out below.
+- **Rule 1 review** (two adversaries, cross-refutation, then a fix-verification
+  round on the reworked script):
+  - *A-1 + B-1 (merged, survived):* cross-suffix blindness twice over. The
+    full-street structured query never returns suffix-variant roads at all
+    (live-probed: `street="100 Brown Close"`, Dayton → 0 results while Brown
+    Street exists), and the first draft's hardcoded suffix list omitted
+    `close`/`rise` — two of the six vocabulary names (executed wrong-verdict
+    demo). **Fixed:** a second bare-name query per identity (probe-validated:
+    `street="Brown"` returns Brown Avenue *and* Brown Street), tokenization
+    derived from the generator's own vocabulary, and the coupling test running
+    every `STREET_NAMES` entry through the tokenizer.
+  - *A-2 (survived; A's own fix shape refuted by B):* no positive control —
+    HTTP 200 + `[]` is indistinguishable from a dead street filter, so a
+    silently degraded pipeline records "hit-free". B's probe refuted A's
+    non-empty canary (a degraded street search still returns the road-free
+    city object); **fixed** as a matcher-asserting canary. Live finding during
+    the re-run: Bakersfield has no "Main" under the structured search (0
+    results, probed) — hence ordered `CANARY_STREETS` ("Main", "Oak"), with
+    "Oak" probe-verified firing in all four locality cities.
+  - *A-3 + B-2 (merged, survived):* the orchestration (`check_identity`,
+    `run_check`) was untested while the docs claimed only the HTTP call was
+    unexercised — the fail-closed catch being exactly the branch a
+    warn-and-continue refactor flips silently. **Fixed:** injection seams
+    (`NominatimSearch(client, sleep)`), MockTransport tests over every error
+    path, exit code, both query shapes, canary gating, and the throttle between
+    every consecutive request pair; the guardrails sentence and test docstring
+    now enumerate exactly what is pinned.
+  - *B-3 (survived):* `PACK_DIR` re-derived with a hardcoded "v1" — a
+    `PACK_VERSION` bump would strand the checker on a stale pack. **Fixed:**
+    `load_pack`/`PACK_DIR` imported from `fiction`; raw `json.loads` survives
+    only in the deliberate offline pack-integrity test.
+  - *B-4 (survived):* `matching_road` returned an in-band sentinel string that
+    `check_identity` printed as "matches real road '(street name yielded no
+    checkable tokens)'". **Fixed:** unverifiable is a distinct pre-query
+    reason; the contract `(tokens, results) → road | None` now holds, tested.
+  - *B-6 (survived at reduced severity):* the staleness half was refuted —
+    `fiction.py`'s claims were literally true — but the one-line pointers to
+    the script were endorsed as same-change polish and **added**.
+  - *Dropped in cross-refutation (reasons recorded):* B-1's Drive-vs-Close
+    asymmetry as live behavior (pre-fix, both suffix classes were equally
+    unreturned at query level — A's probes); A's non-empty canary shape (B's
+    city-object probe defeats it).
+  - *Fix-verification round:* A found one new defect — `canary_ok` inherited
+    the display_name fallback, so a road-free city object like "Royal Oak,
+    Oakland County" satisfies an "Oak" canary (executed) — **fixed** with
+    `require_road=True` plus a regression test; identity matching keeps the
+    fallback deliberately (errs toward hits). B independently re-ran the fixed
+    script live and confirmed every resolution; both recorded residuals below
+    the finding bar: `main()`'s three-line UA shim is the one untested line
+    (a lost header fails closed as a Nominatim 403), `assert_identity_safe`'s
+    substring membership is looser than the checker's word-boundary matching
+    (safe: the CI pack test validates through the checker's own tokenizer),
+    and a future `STREET_NAMES` entry that is another's word-tail broadens
+    tokens (over-flagging only).
+- **Live runs (networked, 2026-08-26):** the first-draft run was superseded by
+  the review's rework; the fixed script ran live twice — after the
+  query/canary rework and again after the `require_road` tightening — both
+  times: canaries ok for Bakersfield and Dayton, all three identities hit-free
+  through both queries, exit 0. `guardrails.md` records the final shape and
+  date.
+- **Close-out — the T1.6 deferral, executed:** a true `git clone` of main into
+  the session scratchpad → `cp .env.example .env`, token and `PUBLIC_BASE_URL`
+  set per the README quickstart → `up --build`: migrate applied 001 on the
+  fresh volume, agent healthy on loopback and through Caddy TLS; `down` / `up`
+  → migrate "already applied … no migrations were applied", still healthy;
+  `down -v` cleaned.
+- **Close-out — doc-claims re-sweep:** the surfaces T1.4–T1.8 added or touched
+  (notice/notify, `ssscammers/db/`, docker files, compose, README, guardrails,
+  fiction) swept for present-tense unbuilt-behavior claims — none found; each
+  task's own review policed its diff. One adjudicated exemption recorded:
+  `001_initial.sql`'s column comments name their planned consumers (dashboard
+  replay, enrichment relabel). The file is now checksum-frozen by the migration
+  runner — editing an applied migration hard-errors every baselined volume —
+  the schema was deliberately built ahead of its consumers, and build status is
+  authoritatively tracked by `roadmap.md`/`README.md`. Do not edit 001 for
+  comment tense.
+- **Verification (final tree):** 688 passed / 16 skipped (21 in the geocode
+  module); textloop dry exit 0; `ruff check .` clean.
 - **Escalations:** none.
 
 ### Phase 1 exit-criteria checklist
@@ -561,12 +664,21 @@ throwaway branches.
 - [x] `docker compose up --build` succeeds from a clean checkout. Evidence:
   T1.6 — rsync-staged working-tree copy with a fresh `.env`: migrate applied
   001, agent healthy via loopback and Caddy TLS, existing-volume re-up
-  no-oped. Re-verify from a true `git clone` at the T1.8 close-out.
+  no-oped. Re-verified at the T1.8 close-out from a true `git clone`: fresh
+  volume → migrate applied 001, healthz ok on loopback and via Caddy TLS;
+  re-up → migrate no-op, healthy; `down -v` cleaned.
 - [x] An unparseable numeric env var produces an asserted warning while still
   falling back to the default. Evidence: T1.2 —
   `tests/test_config.py::TestEnvNumber` asserts the warning via caplog (typo,
   float-for-int, and secret-suppression cases) with the fallback value intact.
-- [ ] The geocode script exists and has run against the fiction pack with
-  results recorded.
-- [ ] A checked list confirms no doc claims unbuilt behavior in the present
-  tense.
+- [x] The geocode script exists and has run against the fiction pack with
+  results recorded. Evidence: T1.8 — `scripts/check_fiction_geocode.py` ran
+  live 2026-08-26 (twice, post-review): canaries fired for both pack cities,
+  all three identities hit-free through the full-street and bare-name queries,
+  exit 0; the dated record lives in `docs/guardrails.md` "Verification
+  status", and 21 CI tests pin everything but the live service.
+- [x] A checked list confirms no doc claims unbuilt behavior in the present
+  tense. Evidence: T1.3 — the 24-claim adjudicated sweep (17 sites fixed, one
+  recorded playbook exemption); re-checked at the T1.8 close-out over every
+  surface T1.4–T1.8 added — no new violations, one adjudicated exemption
+  (`001_initial.sql` column comments; checksum-frozen, see T1.8).

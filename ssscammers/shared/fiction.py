@@ -12,8 +12,9 @@ playbook, reading digits aloud badly. Numbers that fail the checksum satisfy bot
 once: unusable by a processor, speakable by the persona.
 
 ``INVARIANTS`` below records what is machine-checked. Street names are the one item that
-cannot be fully verified offline; the check that exists is a curated list, and confirming
-against open street data is a pre-launch step in ``docs/guardrails.md``.
+cannot be fully verified offline; the check that exists is a curated list, and
+``scripts/check_fiction_geocode.py`` confirms it against open street data as a
+pre-launch step, with the dated record kept in ``docs/guardrails.md``.
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ __all__ = [
     "load_pack",
     "PACK_VERSION",
     "PACK_DIR",
+    "STREET_NAMES",
 ]
 
 PACK_VERSION = "v1"
@@ -49,8 +51,11 @@ PACK_DIR = Path(__file__).resolve().parents[2] / "data" / "fiction_pack" / PACK_
 _CARD_PREFIXES: tuple[str, ...] = ("4539", "4716", "5312", "5427", "6011")
 
 #: Invented street names. Compounds picked to be pronounceable and unremarkable on a
-#: phone call while not naming a real street we could send someone to.
-_STREET_NAMES: tuple[str, ...] = (
+#: phone call while not naming a real street we could send someone to. Public because
+#: it is a contract shared with ``scripts/check_fiction_geocode.py``, which derives
+#: each name's distinctive tokens (the words before the trailing suffix) from this
+#: exact list — every entry must therefore end in its suffix word.
+STREET_NAMES: tuple[str, ...] = (
     "Pennyfarthing Close",
     "Widdicombe Rise",
     "Ashgrove Bellamy Way",
@@ -90,7 +95,11 @@ INVARIANTS: dict[str, str] = {
     "ssn": "area 900-999, never issued by the SSA — CI-verified",
     "phone": "NANP 555-0100..555-0199, reserved for fiction — CI-verified",
     "email": "example.com, reserved by RFC 2606 — CI-verified",
-    "street": "curated invented names — NOT geocode-verified offline; see docs/guardrails.md",
+    "street": (
+        "curated invented names — not verifiable offline; "
+        "scripts/check_fiction_geocode.py checks open street data pre-launch, "
+        "dated record in docs/guardrails.md"
+    ),
 }
 
 
@@ -218,7 +227,7 @@ def generate_identity(persona_id: str, *, seed: int | None = None) -> FictionIde
         full_name=f"{first} {last}",
         age=age,
         date_of_birth=f"{rng.randint(1, 28):02d} {rng.choice(['March', 'June', 'September', 'November'])} {birth_year}",
-        street=f"{rng.randint(1000, 9999)} {rng.choice(_STREET_NAMES)}",
+        street=f"{rng.randint(1000, 9999)} {rng.choice(STREET_NAMES)}",
         city=city,
         state=state,
         postal_code=postal,
@@ -290,6 +299,6 @@ def assert_identity_safe(identity: FictionIdentity) -> None:
     assert identity.email.endswith(("@example.com", "@example.org", "@example.net")), (
         f"{identity.persona_id}: email domain is not RFC 2606 reserved"
     )
-    assert any(name in identity.street for name in _STREET_NAMES), (
+    assert any(name in identity.street for name in STREET_NAMES), (
         f"{identity.persona_id}: street is not from the curated invented list"
     )

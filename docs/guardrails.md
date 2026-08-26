@@ -210,7 +210,18 @@ cross-sentence filter evasion above, and the ingress routing — signature
 validation, blocklist, allowlist, overflow, kill switch, and the voicemail a released
 caller is promised.
 
-Not yet verified, and known: street names are drawn from a curated invented list but
-are **not** geocode-checked against open street data. That check needs network access
-and belongs in a pre-launch step, not in the unit suite. Until it runs, treat the
-addresses as "almost certainly fictional" rather than "proven fictional".
+Verified out-of-band, and dated: street names are drawn from a curated invented list
+**and** checked against open street data by `scripts/check_fiction_geocode.py`. For
+every identity the script queries Nominatim with the full street and again with just
+its distinctive name — a structured search for "… Drive" never returns a real
+"… Street" one suffix over, and couriers fuzzy-match suffixes — deriving those
+tokens from `fiction.STREET_NAMES` itself so the checker cannot drift from the
+generator's vocabulary. Per-city canary streets must produce a road the matcher
+recognises before any empty result is trusted as hit-free. The check needs the
+network, so it is a pre-launch step rather than part of the unit suite — the
+tokenizer, the matcher, and the run orchestration (both queries, canary gating,
+fail-closed error paths, exit codes, throttling) are pinned by
+`tests/test_geocode_check.py`, leaving only live Nominatim behavior unexercised in
+CI. Last run 2026-08-26 against pack v1: every canary fired and every identity's
+street was hit-free. Re-run it after any pack regeneration; until that re-run, a
+regenerated address is "almost certainly fictional" rather than "proven fictional".
