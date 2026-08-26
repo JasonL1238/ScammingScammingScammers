@@ -26,6 +26,7 @@ __all__ = [
     "RESERVED_CALLER",
     "OWNER_PII",
     "SAFEWORD",
+    "SHIPPED",
     "SimulatedClock",
     "make_director",
     "reserve_call",
@@ -38,6 +39,11 @@ CALLER = "+19375559999"
 #: The caller number registry tests reserve from. Deliberately distinct from
 #: ``CALLER``: this one pins the admission path, that one the director path.
 RESERVED_CALLER = "+19375550101"
+
+#: The personas that ship. Hardcoded on purpose: it is the independent anchor
+#: that `available_personas()` is checked *against*, so a discovery bug that
+#: silently drops a bundle cannot also shrink the expectation and stay green.
+SHIPPED: tuple[str, ...] = ("marjorie", "harold", "dot")
 
 #: Stands in for the owner's real name, which the output filter must never speak.
 #: Deliberately fictional — the test data carries no real owner PII.

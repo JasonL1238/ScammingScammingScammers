@@ -204,11 +204,21 @@ one line that must never be swallowed.
 
 Machine-checked in CI today: fiction-pack invariants across hundreds of generated
 identities, the filter against spoken-word digit dictation, the state machine's safety
-exits from every phase, every canned misroute script released within two turns (via
-the disclosure or the emergency redirect, whichever the script demands), the
-cross-sentence filter evasion above, and the ingress routing — signature
-validation, blocklist, allowlist, overflow, kill switch, and the voicemail a released
-caller is promised.
+exits from every phase, every canned misroute script released within two turns
+**through the exact exit its script declares** — the disclosure or the emergency
+redirect, never merely one of the two — across every shipped persona and both entry
+paths, the cross-sentence filter evasion above, the adversarial content predicates,
+and the ingress routing — signature validation, blocklist, allowlist, overflow, kill
+switch, and the voicemail a released caller is promised.
+
+The misroute gate's reach is bounded by its corpus: five scripts, all of which state
+their business within two turns. A caller who talks past the probation hard-commit
+window without tripping a legitimacy signal is committed to baiting by design, and no
+script is long enough to exercise that boundary — the behavior is pinned in
+`tests/test_call_scripts.py` and open as a named question in
+[`execution-log.md`](execution-log.md). Growing the corpus (soft-spoken elderly
+callers, scripted-sounding wrong numbers) is scheduled before anything increases call
+volume.
 
 Verified out-of-band, and dated: street names are drawn from a curated invented list
 **and** checked against open street data by `scripts/check_fiction_geocode.py`. For

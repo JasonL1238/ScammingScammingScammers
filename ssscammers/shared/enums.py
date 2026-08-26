@@ -33,6 +33,7 @@ __all__ = [
     "Tactic",
     "LabelSource",
     "TERMINAL_PHASES",
+    "BAITING_PHASES",
     "BAITABLE_TRIAGE",
 ]
 
@@ -143,6 +144,16 @@ class CallPhase(StrEnum):
 #: any phase, which the state machine checks before ordinary progression.
 TERMINAL_PHASES: frozenset[CallPhase] = frozenset(
     {CallPhase.DISCLOSE_EXIT, CallPhase.EMERGENCY_EXIT, CallPhase.TERMINATE}
+)
+
+
+#: Phases where stalling tactics are allowed to run — the phases a *real* caller
+#: must never reach. Defined once because two very different consumers must agree
+#: on it: ``CallStateMachine.baiting`` gates behavior, and the misroute gate
+#: asserts the absence. A phase added to one and not the other would leave the
+#: gate blind to the engagement it was written to catch.
+BAITING_PHASES: frozenset[CallPhase] = frozenset(
+    {CallPhase.HOOK, CallPhase.STALL, CallPhase.WIND_DOWN}
 )
 
 

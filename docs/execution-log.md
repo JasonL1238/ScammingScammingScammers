@@ -34,6 +34,13 @@ For every new CI gate: push a throwaway branch seeding the named regression,
 the branch (or push the revert). Deleting or reverting while the seeded run is
 in flight would leave no red evidence. Main never contains the regression.
 
+Local red-proofs run on a clean tree: copy the target file aside, and clear
+`__pycache__` **both** after seeding and after restoring. Stale bytecode can
+fake either verdict — a same-length edit (`0.45` → `0.95`) leaves a `.pyc` that
+outlives the restore. The false red costs a cycle; the false **green** is the
+one that matters, because it retires a gate as proven when it never bit. Never
+restore with `git checkout` on a file that carries uncommitted task work.
+
 ## Phase 1 — Groundwork: safety hygiene, CI, migration machinery — COMPLETE
 
 Closed 2026-08-26. All eight exit criteria ticked with evidence (checklist at
@@ -1027,3 +1034,86 @@ long as the phase machine didn't disclose.
   (content checks reported skipped, honestly); `ruff check .` clean; the four
   driving probes re-executed end to end — in-character lines and card read-back
   clean, drip leak and bracket-less rules dump both caught.
+- **Green on main:** run
+  [32949642278](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/32949642278)
+  (commit `dadafbb`).
+
+### T2.6 — The misroute FPR=0 gate
+
+Roadmap exit criterion: "all misroute scripts × all personas × both entry
+paths, release within two turns."
+
+- **Scope:** `TestRealPeopleAreAlwaysReleased` rewritten from four partial
+  tests (marjorie-only, plus a forwarded-only and a one-script persona test)
+  into a derived cross-product — every misroute script × every shipped persona
+  × both entry paths — asserting the **exact** exit each script declares, no
+  engagement, and release within two turns. `BAITING_PHASES` promoted to
+  `shared/enums.py` so the state machine's `baiting` property and the gate's
+  absence-assertion cannot drift apart; `SHIPPED` moved to `tests/helpers.py`
+  as the independent anchor (it had three copies). 51 → 120 tests in the
+  module.
+- **Rule 1 review** (two adversaries; both ran mutation experiments, and
+  between them killed most of the first draft's claims):
+  - *A-F3 (HIGH, fixed):* the rewrite **lost strength**. Collapsing the
+    deleted test's exact `is DISCLOSE_EXIT` into `in (DISCLOSE_EXIT,
+    EMERGENCY_EXIT)` let two real regressions pass green: a fire emergency
+    degraded to the ordinary disclosure ("your message will be seen" instead
+    of "hang up and dial 9 1 1 right now"), and a pharmacist routed to the
+    emergency exit — told to call 911, and silently stripped of the voicemail
+    they were promised. **Fixed** by asserting `script.expect_phase`, which
+    every misroute script already declares. Proven: a seeded
+    emergency-signal broadening now fails 34 cases; under the first draft it
+    failed none.
+  - *A-F1 (HIGH, escalated — see below):* the matrix cannot reach the
+    probation hard-commit boundary. Every misroute script is one or two lines,
+    so elapsed time never passes 50s while commitment happens at 90s. A
+    verified five-turn benign caller — *"Sorry, hello? I can't hear you very
+    well"* — is baited into STALL on all three personas and both entry paths,
+    and the gate declaring FPR=0 cannot see it.
+  - *A-F2 (HIGH, same root cause):* `never_engages` was vacuous for 24 of 30
+    cases — A inverted triage to return SCAM/0.98 for **every** caller and only
+    6 cases failed, because HOOK is unreachable on a single turn. The corpus,
+    not the assertion, is the limit.
+  - *A-F4 + B-F1 (fixed):* the coverage meta-test was self-referential —
+    B renamed a persona directory and the module silently dropped 60 of 90
+    cases while the meta-test passed; A dropped the forwarded axis
+    (`(False, False)`) and it also passed. **Fixed:** anchored on `SHIPPED`
+    and asserting the entry-path axis explicitly; both mutants now die.
+  - *B-F2 (recorded, not fixed):* the persona and entry-path axes have **zero**
+    discriminating power today — B neutered the forwarded wiring entirely and
+    the full suite stayed green, and all 15 script×persona pairs produce
+    byte-identical transition histories. The axes are kept because the exit
+    criterion names them and Phase 10 makes entry-path thresholds real, but
+    "120 tests" is 5 distinct behaviors replayed 18×, and the log says so
+    rather than letting a future reader mistake axis count for corpus breadth.
+  - *A-F7 (fixed):* the engagement-phase tuple was duplicated between the gate
+    and `CallStateMachine.baiting` — now one `BAITING_PHASES` constant.
+  - *B-F8 (fixed, process):* the red-proof procedure now requires clearing
+    `__pycache__`. During this task a same-length seeded edit (`0.45` → `0.95`)
+    left a `.pyc` that outlived the restore and produced a convincing fake
+    regression on a clean tree — twenty minutes chasing a bug that did not
+    exist. The dangerous twin is the fake *green*, which retires a gate that
+    never bit.
+  - *Corrections to my own claims:* the pre-diff module count was 51, not the
+    ~55 I reported; assertion 1's kill set is a subset of assertion 3's, so the
+    three assertions are not three independent checks (kept anyway — each
+    names a distinct property, and Rule 0 governs).
+  - *Adjudicated out of scope:* growing the misroute corpus is Phase 10's, by
+    the roadmap's own text; emitting a measured FPR *rate* would be a reporting
+    harness, and a fail-closed gate should not double as a metrics object.
+- **Escalation — open question for the owner.** *May probation expiry commit an
+  UNCLEAR caller to baiting at all?* Today it does, at 90s. The rationale is
+  sound (ninety seconds without one legitimacy signal is overwhelmingly a
+  scammer) but it is the one shape where a real person is baited, and the
+  population conditional forwarding delivers — slow, confused, hard-of-hearing
+  — is exactly the population that trips it. **Recommendation:** keep the
+  current behavior for now and close the gap in Phase 10, where the corpus
+  grows and the posterior can revisit a commit mid-call; the behavior is pinned
+  by `TestTheProbationBoundaryIsTheKnownGapInTheGate` so changing it is a
+  visible decision. Escalated rather than fixed here because it is a product
+  call about the FPR/engagement trade, not a defect in this diff.
+- **Verification (final tree):** 848 passed / 16 skipped (51 → 120 in the gate
+  module); textloop dry exit 0; `ruff check .` clean. Local red-proofs, run
+  under the amended cache-clearing procedure: legit bar raised → 24 failures;
+  emergency signals broadened → 34 failures; restored → 120 passed with the
+  source tree clean.

@@ -30,6 +30,7 @@ from enum import StrEnum
 
 from ssscammers.shared.enums import (
     BAITABLE_TRIAGE,
+    BAITING_PHASES,
     TERMINAL_PHASES,
     CallPhase,
     EndReason,
@@ -129,7 +130,7 @@ class CallStateMachine:
     @property
     def baiting(self) -> bool:
         """True only where stalling tactics are allowed to run."""
-        return self.phase in (CallPhase.HOOK, CallPhase.STALL, CallPhase.WIND_DOWN)
+        return self.phase in BAITING_PHASES
 
     def advance(self, ctx: CallContext) -> Transition:
         """Evaluate ``ctx`` and move to the phase it implies.

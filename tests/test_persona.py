@@ -13,14 +13,13 @@ from pathlib import Path
 
 import pytest
 import yaml
+from helpers import SHIPPED
 
 from ssscammers.agent.media import IMPLEMENTED_TTS, looks_unconfigured, unservable_reason
 from ssscammers.agent.persona import Persona, available_personas, load_persona
 from ssscammers.shared.config import Settings
 from ssscammers.shared.enums import Tactic
 from ssscammers.shared.output_filter import OutputFilter
-
-SHIPPED = ("marjorie", "harold", "dot")
 
 
 def test_all_shipped_personas_are_discoverable() -> None:

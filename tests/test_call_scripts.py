@@ -12,10 +12,16 @@ whether a caller gets released, and all three run offline.
 from __future__ import annotations
 
 import pytest
-from helpers import make_director
+from helpers import SHIPPED, make_director
 
+from ssscammers.agent.persona import available_personas
 from ssscammers.agent.persona_director import PersonaDirector, TurnPlan
-from ssscammers.shared.enums import CallPhase
+from ssscammers.shared.enums import (
+    BAITING_PHASES,
+    TERMINAL_PHASES,
+    CallPhase,
+    TriageClass,
+)
 from ssscammers.simscammer.scripts import (
     ADVERSARIAL_SCRIPTS,
     MISROUTE_SCRIPTS,
@@ -73,44 +79,117 @@ class TestScamScriptsGetBaited:
         assert d.state.baiting
 
 
-class TestRealPeopleAreAlwaysReleased:
-    """The gate. Every one of these is someone who did nothing wrong."""
+#: The misroute gate's full cross-product: every real-person script, against
+#: every persona that ships, arriving by both paths a caller can arrive on.
+#: Derived rather than listed, so a new persona bundle or a new misroute script
+#: enters the gate the day it lands instead of the day someone remembers.
+MISROUTE_CASES = [
+    (script, persona_id, forwarded)
+    for script in MISROUTE_SCRIPTS
+    for persona_id in available_personas()
+    for forwarded in (False, True)
+]
+MISROUTE_IDS = [
+    f"{script.name}-{persona}-{'forwarded' if fwd else 'direct'}"
+    for script, persona, fwd in MISROUTE_CASES
+]
 
-    @pytest.mark.parametrize("script", MISROUTE_SCRIPTS, ids=lambda s: s.name)
-    def test_the_caller_is_released_not_baited(self, script: CallerScript) -> None:
-        d, _ = play(script)
-        assert d.state.phase in (CallPhase.DISCLOSE_EXIT, CallPhase.EMERGENCY_EXIT), (
+
+class TestRealPeopleAreAlwaysReleased:
+    """The gate: false-positive rate zero, over the whole cross-product.
+
+    Every one of these is someone who did nothing wrong, and baiting one is the
+    single failure this project cannot ship — so the claim is not "the common
+    case works" but that no combination of caller, persona, and entry path
+    produces a bait.
+
+    Two limits are stated here rather than left to be discovered. **The corpus
+    is five scripts**, replayed across personas and entry paths that do not
+    currently change the outcome, so the breadth is in the axes, not yet in the
+    callers. And **every script states its business within two turns**, which
+    means the matrix never reaches the probation hard-commit boundary at 90s —
+    a real caller who rambles that long *is* committed to baiting today. That
+    gap is pinned below, and escalated in `docs/execution-log.md`; the roadmap
+    schedules the corpus growth (soft-spoken elderly callers, scripted-sounding
+    wrong numbers) for Phase 10, before anything increases call volume.
+    """
+
+    @pytest.mark.parametrize(("script", "persona_id", "forwarded"), MISROUTE_CASES, ids=MISROUTE_IDS)
+    def test_the_caller_reaches_the_exit_its_script_declares(
+        self, script: CallerScript, persona_id: str, forwarded: bool
+    ) -> None:
+        # The exact phase, not "some exit": a fire emergency released through
+        # the ordinary disclosure would hear "your message will be seen"
+        # instead of "hang up and dial 9 1 1 right now", and a pharmacist
+        # released through the emergency exit is told to call 911 and loses
+        # the voicemail they were promised.
+        d, _ = play(script, persona_id=persona_id, forwarded=forwarded)
+        assert script.expect_phase is not None, f"{script.name} declares no expected exit"
+        assert d.state.phase is script.expect_phase, (
             f"{script.name} ended in {d.state.phase.value}"
         )
 
-    @pytest.mark.parametrize("script", MISROUTE_SCRIPTS, ids=lambda s: s.name)
-    def test_the_persona_never_engages(self, script: CallerScript) -> None:
-        d, _ = play(script)
-        for phase in (CallPhase.HOOK, CallPhase.STALL, CallPhase.WIND_DOWN):
+    @pytest.mark.parametrize(("script", "persona_id", "forwarded"), MISROUTE_CASES, ids=MISROUTE_IDS)
+    def test_the_persona_never_engages(
+        self, script: CallerScript, persona_id: str, forwarded: bool
+    ) -> None:
+        d, _ = play(script, persona_id=persona_id, forwarded=forwarded)
+        for phase in BAITING_PHASES:
             assert not reached(d, phase), f"{script.name} baited a real caller"
 
-    @pytest.mark.parametrize("script", MISROUTE_SCRIPTS, ids=lambda s: s.name)
-    def test_release_happens_within_two_turns(self, script: CallerScript) -> None:
+    @pytest.mark.parametrize(("script", "persona_id", "forwarded"), MISROUTE_CASES, ids=MISROUTE_IDS)
+    def test_release_happens_within_two_turns(
+        self, script: CallerScript, persona_id: str, forwarded: bool
+    ) -> None:
         # A real person should not have to explain themselves twice.
-        d, _ = play(script)
-        exits = [
-            t for t in d.state.history
-            if t.to in (CallPhase.DISCLOSE_EXIT, CallPhase.EMERGENCY_EXIT)
-        ]
+        d, _ = play(script, persona_id=persona_id, forwarded=forwarded)
+        exits = [t for t in d.state.history if t.to in TERMINAL_PHASES]
         assert exits, f"{script.name} never exited"
         assert exits[0].at_seconds <= SECONDS_PER_TURN * 2
 
-    @pytest.mark.parametrize("script", MISROUTE_SCRIPTS, ids=lambda s: s.name)
-    def test_release_works_on_forwarded_calls_too(self, script: CallerScript) -> None:
-        # Forwarding is how these callers arrive in the first place.
-        d, _ = play(script, forwarded=True)
-        assert d.state.phase in (CallPhase.DISCLOSE_EXIT, CallPhase.EMERGENCY_EXIT)
+    def test_the_matrix_covers_every_axis(self) -> None:
+        # Anchored on the independent SHIPPED tuple, not on the discovery
+        # function the matrix is built from: a discovery bug that dropped a
+        # bundle would otherwise shrink both sides at once and stay green.
+        scripts, personas, paths = (set(axis) for axis in zip(*MISROUTE_CASES, strict=True))
+        assert personas >= set(SHIPPED)
+        assert {s.name for s in scripts} == {s.name for s in MISROUTE_SCRIPTS}
+        assert paths == {False, True}
+        assert len(MISROUTE_CASES) == len(MISROUTE_SCRIPTS) * len(personas) * 2
 
-    @pytest.mark.parametrize("persona_id", ["marjorie", "harold", "dot"])
-    def test_release_does_not_depend_on_which_persona_answered(self, persona_id: str) -> None:
-        script = next(s for s in MISROUTE_SCRIPTS if s.name == "pharmacy_prescription")
-        d, _ = play(script, persona_id=persona_id)
-        assert d.state.phase is CallPhase.DISCLOSE_EXIT
+
+class TestTheProbationBoundaryIsTheKnownGapInTheGate:
+    """What the FPR gate above cannot see, pinned so it cannot be forgotten.
+
+    Probation exists so the system does not commit to baiting on thin evidence,
+    but it expires: after ``probation_hard_commit_seconds`` an UNCLEAR caller is
+    committed anyway. That is deliberate — a caller who has talked for ninety
+    seconds without tripping a single legitimacy signal is overwhelmingly a
+    scammer — but it is also the one shape where a *real* person gets baited,
+    and no misroute script is long enough to reach it.
+
+    This test asserts today's behavior rather than the behavior we might want,
+    so that changing it is a visible decision rather than a silent drift. The
+    open question — whether probation expiry may commit an unclear caller at
+    all — is recorded for the owner in `docs/execution-log.md`.
+    """
+
+    def test_an_unclear_caller_is_committed_once_probation_expires(self) -> None:
+        d = make_director()
+        d.opening()
+        elapsed = 0.0
+        for _ in range(5):
+            elapsed += SECONDS_PER_TURN
+            d.handle_caller_turn(
+                "Sorry, hello? I can't hear you very well, could you speak up?",
+                elapsed_seconds=elapsed,
+            )
+        assert d.triage.result().triage is TriageClass.UNCLEAR
+        assert d.state.baiting, (
+            "probation no longer commits an unclear caller — a deliberate change "
+            "to the FPR posture; update the escalation in docs/execution-log.md"
+        )
+        assert any(t.trigger.value == "probation_expired" for t in d.state.history)
 
 
 class TestAdversarialCallers:
