@@ -298,12 +298,33 @@ class Conversation:
             # would hear it twice and hang the call up twice.
             return
 
-        if utterance.strip():
+        spoke = bool(utterance.strip())
+        if spoke:
             self._last_caller_audio = self.clock()
             self._history.append(Turn("user", utterance))
-            await self._emit("caller_turn", {"text": utterance})
 
-        plan = self._advance(utterance)
+        # The plan is made first so the caller_turn event can carry the verdict this
+        # utterance produced — the classification and its evidence, not the stale one
+        # from a turn ago. The observable order is unchanged: caller_turn still
+        # precedes everything _execute emits.
+        try:
+            plan = self._advance(utterance)
+        except Exception:
+            # The input that crashes the planner is the most forensically valuable
+            # one; the event must survive even when planning does not. The marker is
+            # explicit because absent triage keys would be ambiguous between three
+            # facts: planning crashed, the plan carried no verdict, a serializer bug.
+            if spoke:
+                await self._emit(
+                    "caller_turn", {"text": utterance, "planning_failed": True}
+                )
+            raise
+        if spoke:
+            verdict = plan.triage
+            await self._emit(
+                "caller_turn",
+                {"text": utterance, **(verdict.as_payload() if verdict else {})},
+            )
         async for action in self._execute(plan):
             yield action
 
@@ -423,15 +444,19 @@ class Conversation:
         spoken: list[str] = []
         first = True
         failure: str | None = None
+        first_sentence_ms: int | None = None
+        character_pause_ms = 0
 
         try:
             async with asyncio.timeout(self.generation_timeout_seconds):
                 async for sentence in self.brain.stream_reply(self._history, plan.state_note):
                     if first:
                         first = False
+                        first_sentence_ms = round((self.clock() - started) * 1000)
                         # Character latency, minus whatever the model already spent.
                         remaining = plan.character_delay_ms / 1000.0 - (self.clock() - started)
                         if remaining > 0:
+                            character_pause_ms = round(remaining * 1000)
                             self._occupy_line(remaining)
                             yield Pause(remaining)
 
@@ -467,6 +492,13 @@ class Conversation:
             failure = "error"
             logger.exception("generation failed; covering with a stalling line")
 
+        # Measured here, at stream end: in production the transport drains this
+        # generator action by action, so time between sentences includes downstream
+        # playback — per-sentence playback timings are the media seam's to record
+        # (roadmap rescope 6). `first_sentence_ms` is the clean model-latency signal,
+        # captured before anything was yielded for this sentence.
+        stream_ms = round((self.clock() - started) * 1000)
+
         if failure is None and getattr(self.brain, "last_stop_reason", None) == "max_tokens":
             # The reply was cut mid-word. Nothing raised and text did arrive, so without
             # this the event log is byte-identical to a clean turn — and the fragment is
@@ -498,6 +530,12 @@ class Conversation:
                 "filler": plan.filler,
                 "character_delay_ms": plan.character_delay_ms,
                 "fumbled": fumbled,
+                # The turn's measured values: how long the caller actually waited.
+                # first_sentence_ms is what the filler clip had to cover; None means
+                # no sentence ever arrived (timeout, error, or an empty stream).
+                "first_sentence_ms": first_sentence_ms,
+                "stream_ms": stream_ms,
+                "character_pause_ms": character_pause_ms,
             },
         )
 

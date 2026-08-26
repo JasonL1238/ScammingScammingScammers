@@ -111,6 +111,10 @@ def _describe(session: Session, actions: list[Action]) -> str:
     plan = session.conversation.last_plan
     bits = [f"phase={session.conversation.final_phase.value}"]
     if plan is not None:
+        if plan.triage is not None:
+            # Phase lags the verdict by the confidence bar and probation, so a
+            # developer tuning triage sees the flip here, turns before it acts.
+            bits.append(f"triage={plan.triage.triage.value}@{plan.triage.confidence:.2f}")
         if plan.tactic.value != "none":
             bits.append(f"tactic={plan.tactic.value}")
         if plan.character_delay_ms:

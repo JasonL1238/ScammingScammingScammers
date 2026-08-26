@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 
 from ssscammers.agent.persona import Persona
 from ssscammers.agent.state_machine import CallContext, CallStateMachine, Transition
-from ssscammers.agent.triage import AllowlistCache, TriageEngine
+from ssscammers.agent.triage import AllowlistCache, TriageEngine, TriageResult
 from ssscammers.shared.enums import CallPhase, EntryPath, ScamType, Tactic, TriageClass
 from ssscammers.shared.output_filter import FilterResult, OutputFilter
 
@@ -99,6 +99,11 @@ class TurnPlan:
     """
 
     transition: Transition | None = None
+
+    triage: TriageResult | None = None
+    """The verdict this plan was made under, carried so the event log can record the
+    classification *and its evidence* alongside the turn it steered. ``None`` only
+    for the opening plan, which precedes any caller speech."""
 
 
 @dataclass
@@ -256,7 +261,13 @@ class PersonaDirector:
 
         # --- Exits speak fixed text and end the call. No model involved. ---
         if phase is CallPhase.EMERGENCY_EXIT:
-            return TurnPlan(phase=phase, speak=EMERGENCY_SCRIPT, hang_up=True, transition=transition)
+            return TurnPlan(
+                phase=phase,
+                speak=EMERGENCY_SCRIPT,
+                hang_up=True,
+                transition=transition,
+                triage=verdict,
+            )
 
         if phase is CallPhase.DISCLOSE_EXIT:
             warning_victim = verdict.triage is TriageClass.VICTIM_CALLBACK
@@ -266,16 +277,19 @@ class PersonaDirector:
                 hang_up=True,
                 offer_voicemail=not warning_victim,
                 transition=transition,
+                triage=verdict,
             )
 
         if phase is CallPhase.TERMINATE:
-            return TurnPlan(phase=phase, speak=None, hang_up=True, transition=transition)
+            return TurnPlan(
+                phase=phase, speak=None, hang_up=True, transition=transition, triage=verdict
+            )
 
         # A timer has nothing to say outside the exits, and must not plan a turn: picking
         # a tactic here would mutate `_last_tactic` for a turn nobody performs, poisoning
         # the "don't repeat yourself" exclusion on the next real turn.
         if exits_only:
-            return TurnPlan(phase=phase, transition=transition)
+            return TurnPlan(phase=phase, transition=transition, triage=verdict)
 
         # --- Still neutral: answer plainly, give nothing away. ---
         if phase in (CallPhase.GREETING, CallPhase.ASSESSING):
@@ -286,6 +300,7 @@ class PersonaDirector:
                 filler=self._filler(),
                 character_delay_ms=self.persona.pacing.sample_delay_ms(self.rng),
                 transition=transition,
+                triage=verdict,
             )
 
         # --- Baiting. ---
@@ -305,6 +320,7 @@ class PersonaDirector:
             character_delay_ms=self.persona.pacing.sample_delay_ms(self.rng),
             hold_seconds=hold_seconds,
             transition=transition,
+            triage=verdict,
         )
 
     def vet_result(self, candidate: str) -> FilterResult:

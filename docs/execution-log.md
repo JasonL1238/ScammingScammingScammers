@@ -765,3 +765,86 @@ throwaway branches.
   edits were reapplied from context and the full suite re-verified green —
   future mutations copy the file aside first.
 - **Escalations:** none.
+- **Green on main:** run
+  [32945202177](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/32945202177)
+  (commit `2c99667`) — all eight jobs, including the 3.11 legs: the pinned
+  seed-6 draws reproduced on 3.11/ubuntu, settling cross-version rng stability
+  empirically.
+
+### T2.2 — Payload widening, first family: triage provenance + measured latency
+
+- **Scope:** `TurnPlan` carries the `TriageResult` it was made under; the
+  `caller_turn` emit moves after `_advance` (order-preserving, now pinned by
+  test) and carries `TriageResult.as_payload()` — verdict, confidence,
+  scam_type, emergency/threat, and the deduplicated signal evidence; model-path
+  `agent_turn` gains measured `first_sentence_ms` / `stream_ms` /
+  `character_pause_ms`. The triage engine deduplicates hits by
+  (pattern, toward) with a `count` on `SignalHit`, appends emergency/threat
+  evidence hits (weight 0.0 — score contribution stays honest), and populates
+  the emergency/threat booleans on **every** result branch. The textloop's
+  per-turn readout now shows the live verdict (`triage=scam@0.85`).
+- **Rule 1 review** (two adversaries, cross-refutation; every claim probed):
+  - *A-1 + B-5 (merged, survived at MEDIUM):* unbounded caller-controlled
+    quadratic signals growth — probed at 200 turns of looped pressure phrases:
+    84.6KB single event, ~95MB/call extrapolated to the hard cap, and the
+    90-minute looping robocall is the *target* caller. Argued to ground across
+    four fix shapes; **engine-level dedupe with count won** (bounds memory and
+    payload to the fixed pattern space — probed ceiling 81 entries ≈ 7.3KB
+    worst case — keeps events self-contained for Phase 5, and "do not hang up
+    × 212" is better evidence than 212 duplicates). Cap rejected (discards
+    evidence arbitrarily), deltas rejected (pushes accumulation into every
+    consumer forever), serializer-level rejected (leaves engine memory O(n) —
+    the same altitude error as B-4). Insertion-ordered dict keeps the tuple
+    byte-stable under seeded replay. A payload-shape decision made now
+    deliberately: Phase 2 is the last free moment before Phase 5 freezes it.
+  - *B-1 (survived at MEDIUM; A withdrew its initial "scope call" refutation
+    with reasons):* the safety-critical classifications left zero evidence —
+    probed: an emergency caller_turn read `unclear/0.0/no signals` while
+    triggering `emergency_exit`, and serializing the booleans alone would have
+    logged `emergency: false` (result() populated them only on the SCAM
+    branch — confidently wrong, worse than silent). **Fixed at the source:**
+    evidence hits in `observe()`, booleans on every branch (their result-field
+    consumers were zero, verified), then serialized.
+  - *B-4 (survived; A conceded):* the serializer lived a module away from the
+    dataclass it flattens — and the B-1 omission is the drift that placement
+    invited. **Fixed:** `TriageResult.as_payload()` beside `explanation`, the
+    established precedent for presentation logic.
+  - *A-2 (survived):* the emit reorder lost the caller_turn event when
+    planning raises — the crashing input never reached the canonical log (the
+    old order kept it). **Fixed:** try/except emits
+    `{"text", "planning_failed": true}` then re-raises (PIPELINE_ERROR
+    backstop preserved). The marker is explicit per B's argument — absent keys
+    would be ambiguous among a crash, a verdict-free plan, and a serializer
+    bug; the coordinator sided with B over A's bare-text shape.
+  - *B-2 (survived):* the cumulative-hits contract was untested — a
+    per-turn-slicing mutant passed all five new tests (turn one left zero
+    hits, so any length comparison held). **Fixed:** containment + count pin
+    ("Do not hang up." leaves a hit on turn one; turn two must contain it,
+    and a repeat must raise `count` to 2).
+  - *B-3 (survived as missing-red-test; A confirmed the order claim is
+    accurate today):* the reorder's contract lived only in a comment; no test
+    could red on a future reorder (run-vs-run reorders identically — the T2.1
+    lesson applied). **Fixed:** exact `types()` pin for a respond turn. B-8
+    rider: the scripted agent_turn's key set pinned to `{text, scripted}` —
+    the no-measured-fields asymmetry is deliberate and now tested.
+  - *B-7 (survived; A refused the "correct restraint" refutation):* the
+    harness printed phase but not the verdict, and phase lags verdict by
+    probation — a developer tuning triage could not see the flip. **Fixed:**
+    one guarded line in `_describe`.
+  - *Recorded limitations and non-goals:* "filler-coverage" is delivered as
+    coverage-demand (`first_sentence_ms`) plus intent (the drawn `filler`) —
+    whether the clip actually *played* is unknowable at this layer (media
+    logs-and-skips missing clips); playback truth is the Phase 7 media seam's
+    per rescope 6. A final verdict on `call_ended` is a deliberate non-goal:
+    provably redundant with the last caller_turn's verdict (ticks and hangups
+    never observe), better decided with the Phase 5 schema. `stream_ms`
+    includes downstream consumption between sentences in production — stated
+    in the payload comment; all timing fields are honest against the injected
+    clock by design.
+  - *Refuted by A (evidence on file):* the reorder creates no new tick
+    interleaving (respond runs under the media turn lock; the logging sink
+    never awaits); the failing-sink path is unchanged (disclosure still spoken
+    verbatim, probed); T2.1's pins pass over the widened payloads.
+- **Verification (final tree):** 708 passed / 16 skipped (11 new tests across
+  the task); textloop dry exit 0; `ruff check .` clean.
+- **Escalations:** none.

@@ -20,7 +20,8 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from typing import Any
 
 from ssscammers.shared.enums import CallerClass, ScamType, TriageClass
 from ssscammers.shared.validators import national_digits
@@ -206,11 +207,19 @@ _THREAT_SIGNALS = _phrases(
 
 @dataclass(frozen=True)
 class SignalHit:
-    """One matched phrase, kept so a call's classification can be explained."""
+    """One matched phrase, kept so a call's classification can be explained.
+
+    Deduplicated per call: a looping robocall repeating "do not hang up" for
+    ninety minutes is one hit with a large ``count``, not an unbounded list —
+    the caller controls how often a phrase repeats, never how much evidence the
+    log stores. ``weight`` stays the per-match score contribution (a constant
+    for each pattern), so the dashboard's sort order survives the merge.
+    """
 
     pattern: str
     weight: float
     toward: str
+    count: int = 1
 
 
 @dataclass(frozen=True)
@@ -231,6 +240,31 @@ class TriageResult:
         top = sorted(self.hits, key=lambda h: h.weight, reverse=True)[:3]
         return "; ".join(f"{h.toward}: {h.pattern}" for h in top)
 
+    def as_payload(self) -> dict[str, Any]:
+        """The verdict flattened for the canonical event log.
+
+        Lives here, beside the fields it serializes, so a field added to this
+        dataclass cannot be silently dropped by a serializer a module away —
+        which is exactly how emergency and threat went missing from the first
+        draft of the caller_turn widening.
+        """
+        return {
+            "triage": self.triage.value,
+            "triage_confidence": self.confidence,
+            "scam_type": self.scam_type.value,
+            "emergency": self.emergency,
+            "threat": self.threat,
+            "signals": [
+                {
+                    "pattern": h.pattern,
+                    "weight": h.weight,
+                    "toward": h.toward,
+                    "count": h.count,
+                }
+                for h in self.hits
+            ],
+        }
+
 
 @dataclass
 class TriageEngine:
@@ -247,7 +281,10 @@ class TriageEngine:
     _robocall_score: float = 0.0
     _lead_gen_score: float = 0.0
     _scam_type_scores: dict[ScamType, float] = field(default_factory=dict)
-    _hits: list[SignalHit] = field(default_factory=list)
+    #: Keyed by (pattern, toward), insertion-ordered: first-seen order keeps the
+    #: serialized tuple byte-stable under seeded replay, and the fixed pattern
+    #: space bounds both this dict and every event payload built from it.
+    _hits: dict[tuple[str, str], SignalHit] = field(default_factory=dict)
     _emergency: bool = False
     _threat: bool = False
     _heard_safeword: bool = False
@@ -275,16 +312,27 @@ class TriageEngine:
         if self.safeword and re.search(rf"\b{re.escape(self.safeword)}\b", text, re.IGNORECASE):
             self._heard_safeword = True
 
-        if any(p.search(text) for p in _EMERGENCY_SIGNALS):
-            self._emergency = True
-        if any(p.search(text) for p in _THREAT_SIGNALS):
-            self._threat = True
+        # Emergency and threat drive boolean exits, not scores — the hits carry
+        # weight 0.0 so "weight" keeps meaning "score contribution" — but the
+        # evidence must exist: an emergency exit whose caller_turn shows no
+        # signals is a log that cannot explain the most consequential decision
+        # the system makes.
+        for pattern in _EMERGENCY_SIGNALS:
+            if pattern.search(text):
+                self._emergency = True
+                self._hit(pattern.pattern, 0.0, "emergency")
+                break
+        for pattern in _THREAT_SIGNALS:
+            if pattern.search(text):
+                self._threat = True
+                self._hit(pattern.pattern, 0.0, "threat")
+                break
 
         for patterns, weight, scam_type in _SCAM_SIGNALS:
             for pattern in patterns:
                 if pattern.search(text):
                     self._scam_score += weight
-                    self._hits.append(SignalHit(pattern.pattern, weight, "scam"))
+                    self._hit(pattern.pattern, weight, "scam")
                     if scam_type is not ScamType.UNKNOWN:
                         self._scam_type_scores[scam_type] = (
                             self._scam_type_scores.get(scam_type, 0.0) + weight
@@ -295,13 +343,13 @@ class TriageEngine:
         for pattern, weight in _PRESSURE_SIGNALS:
             if pattern.search(text):
                 self._scam_score += weight
-                self._hits.append(SignalHit(pattern.pattern, weight, "scam"))
+                self._hit(pattern.pattern, weight, "scam")
 
         for patterns, weight in _LEGIT_SIGNALS:
             for pattern in patterns:
                 if pattern.search(text):
                     self._legit_score += weight
-                    self._hits.append(SignalHit(pattern.pattern, weight, "legit"))
+                    self._hit(pattern.pattern, weight, "legit")
                     break
 
         # Volunteering an identity early reads as genuine, but only before a scam
@@ -309,56 +357,77 @@ class TriageEngine:
         # in anyone's favour.
         if self._scam_score < 0.3 and any(p.search(text) for p in _SELF_IDENTIFY):
             self._legit_score += 0.15
-            self._hits.append(SignalHit("self-identified", 0.15, "legit"))
+            self._hit("self-identified", 0.15, "legit")
 
         for pattern in _ROBOCALL_SIGNALS:
             if pattern.search(text):
                 self._robocall_score += 0.4
-                self._hits.append(SignalHit(pattern.pattern, 0.4, "robocall"))
+                self._hit(pattern.pattern, 0.4, "robocall")
                 break
 
         for pattern in _LEAD_GEN_SIGNALS:
             if pattern.search(text):
                 self._lead_gen_score += 0.4
-                self._hits.append(SignalHit(pattern.pattern, 0.4, "lead_gen"))
+                self._hit(pattern.pattern, 0.4, "lead_gen")
                 break
 
+    def _hit(self, pattern: str, weight: float, toward: str) -> None:
+        """Record evidence, deduplicated: a repeat raises ``count``, never the size."""
+        key = (pattern, toward)
+        existing = self._hits.get(key)
+        if existing is None:
+            self._hits[key] = SignalHit(pattern, weight, toward)
+        else:
+            self._hits[key] = replace(existing, count=existing.count + 1)
+
     def result(self) -> TriageResult:
-        """Current verdict."""
-        hits = tuple(self._hits)
+        """Current verdict.
+
+        ``emergency`` and ``threat`` ride on every branch: an emergency is most
+        often detected while the classification is still UNCLEAR, and a result
+        that reported ``emergency=False`` there would be confidently wrong in
+        the log about the one detection that ends the call.
+        """
+
+        def verdict(
+            triage: TriageClass, confidence: float, scam_type: ScamType = ScamType.UNKNOWN
+        ) -> TriageResult:
+            return TriageResult(
+                triage,
+                confidence,
+                scam_type=scam_type,
+                emergency=self._emergency,
+                threat=self._threat,
+                hits=tuple(self._hits.values()),
+            )
 
         if self._turns == 0:
-            return TriageResult(TriageClass.UNCLEAR, 0.0, hits=hits)
+            return verdict(TriageClass.UNCLEAR, 0.0)
 
         # A real-person read wins ties and near-ties. Stopping is cheaper than
         # wrongly continuing, so the comparison is deliberately not symmetric.
         if self._legit_score >= 0.45 and self._legit_score >= self._scam_score * 0.8:
             triage = (
                 TriageClass.VICTIM_CALLBACK
-                if any("told me to call" in h.pattern for h in hits)
+                if any("told me to call" in h.pattern for h in self._hits.values())
                 else TriageClass.LEGIT_BUSINESS
             )
-            return TriageResult(triage, min(0.95, self._legit_score), hits=hits)
+            return verdict(triage, min(0.95, self._legit_score))
 
         if self._scam_score >= 0.4:
-            return TriageResult(
-                TriageClass.SCAM,
-                min(0.98, self._scam_score),
-                scam_type=self._best_scam_type(),
-                emergency=self._emergency,
-                threat=self._threat,
-                hits=hits,
+            return verdict(
+                TriageClass.SCAM, min(0.98, self._scam_score), scam_type=self._best_scam_type()
             )
 
         if self._lead_gen_score >= 0.4 and self._lead_gen_score > self._robocall_score:
-            return TriageResult(TriageClass.LEAD_GEN, min(0.9, self._lead_gen_score), hits=hits)
+            return verdict(TriageClass.LEAD_GEN, min(0.9, self._lead_gen_score))
 
         if self._robocall_score >= 0.4:
-            return TriageResult(TriageClass.ROBOCALL, min(0.9, self._robocall_score), hits=hits)
+            return verdict(TriageClass.ROBOCALL, min(0.9, self._robocall_score))
 
         # Some evidence, not enough of it.
         residual = max(self._scam_score, self._legit_score)
-        return TriageResult(TriageClass.UNCLEAR, min(0.4, residual), hits=hits)
+        return verdict(TriageClass.UNCLEAR, min(0.4, residual))
 
     def _best_scam_type(self) -> ScamType:
         if not self._scam_type_scores:

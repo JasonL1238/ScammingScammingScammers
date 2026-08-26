@@ -1067,3 +1067,159 @@ class TestSeedAndDrawLogging:
         assert clip in conversation.director.persona.holds
         played = [a.clip for a in actions if isinstance(a, PlayClip) and a.kind == "hold"]
         assert played == [clip]
+
+
+class TestPayloadWidening:
+    """Roadmap Phase 2, move two (first family): the event log explains itself.
+
+    caller_turn carries the verdict the utterance produced and its evidence;
+    agent_turn carries what the caller actually waited through. Payload assertions
+    here are the deliberate contract updates the roadmap schedules.
+    """
+
+    async def test_caller_turn_carries_the_verdict_and_its_evidence(self) -> None:
+        conversation, _, sink = build()
+        await conversation.open()
+        await drain(conversation, "This is the fraud department of your bank.")
+
+        turn = [e for e in sink.events if e.type == "caller_turn"][-1]
+        assert turn.payload["triage"] == "scam"
+        assert turn.payload["triage_confidence"] > 0
+        assert "scam_type" in turn.payload
+        signals = turn.payload["signals"]
+        assert signals, "a fraud-department opener must leave evidence"
+        assert all({"pattern", "weight", "toward"} <= set(s) for s in signals)
+        assert any(s["toward"] == "scam" for s in signals)
+
+    async def test_the_verdict_is_this_turns_not_the_previous_ones(self) -> None:
+        # The emit was moved after the director advances precisely so the event
+        # reflects the utterance it carries; a stale verdict here would make the
+        # log lie about why the call moved.
+        conversation, _, sink = build()
+        await conversation.open()
+        await drain(conversation, "Do not hang up.")
+        await drain(conversation, "There is a warrant for your arrest, pay today.")
+
+        first, second = [e.payload for e in sink.events if e.type == "caller_turn"]
+        assert first["triage"] == "unclear"
+        assert second["triage"] == "scam"
+
+    async def test_signals_accumulate_and_a_repeat_raises_count_not_size(self) -> None:
+        # The self-contained-event contract, pinned as containment rather than
+        # length: turn one's evidence must still be present on turn two (a
+        # per-turn-slicing mutant passes any length comparison), and a repeated
+        # phrase must dedupe into a count — the caller controls how often a
+        # phrase repeats, never how much evidence the log stores.
+        conversation, _, sink = build()
+        await conversation.open()
+        await drain(conversation, "Do not hang up.")
+        await drain(conversation, "Do not hang up. There is a warrant for your arrest.")
+
+        first, second = [e.payload for e in sink.events if e.type == "caller_turn"]
+        first_patterns = {s["pattern"] for s in first["signals"]}
+        assert first_patterns, "turn one must leave evidence"
+        assert first_patterns <= {s["pattern"] for s in second["signals"]}
+        repeated = [s for s in second["signals"] if s["pattern"] in first_patterns]
+        assert any(s["count"] == 2 for s in repeated), "a repeat must raise count"
+        assert all(s["count"] == 1 for s in first["signals"])
+
+    async def test_an_emergency_leaves_evidence_in_the_event_log(self) -> None:
+        # The most consequential classification must be explicable from the
+        # caller_turn event alone — an emergency exit whose event shows
+        # "unclear, no signals" is a log that cannot explain the call.
+        conversation, _, sink = build()
+        await conversation.open()
+        await drain(conversation, "There's a fire, please call 911 for me!")
+
+        payload = [e for e in sink.events if e.type == "caller_turn"][-1].payload
+        assert payload["emergency"] is True
+        assert any(s["toward"] == "emergency" for s in payload["signals"])
+        assert conversation.final_phase is CallPhase.EMERGENCY_EXIT
+
+    async def test_the_event_order_of_a_turn_is_pinned(self) -> None:
+        # The reorder's contract, as a red-able test rather than a comment:
+        # caller_turn precedes everything _execute emits. Run-vs-run equality
+        # cannot catch a reorder — both runs reorder identically.
+        conversation, _, sink = build()
+        await conversation.open()
+        await drain(conversation, "Sorry, I think I've got the wrong number.")
+        assert sink.types() == ["call_opened", "caller_turn", "phase_changed", "agent_turn", "call_ended"]
+
+    async def test_a_crashing_planner_still_logs_the_caller_turn(self) -> None:
+        # The input that crashes the planner is the most forensically valuable
+        # one. The marker is explicit: absent triage keys would be ambiguous
+        # between a crash, a verdict-free plan, and a serializer bug.
+        conversation, _, sink = build()
+        await conversation.open()
+
+        def boom(*args: object, **kwargs: object) -> None:
+            raise RuntimeError("director bug")
+
+        conversation.director.handle_caller_turn = boom  # type: ignore[method-assign]
+        with pytest.raises(RuntimeError, match="director bug"):
+            await drain(conversation, "This crashes the planner.")
+
+        payload = [e for e in sink.events if e.type == "caller_turn"][-1].payload
+        assert payload["text"] == "This crashes the planner."
+        assert payload["planning_failed"] is True
+        assert "triage" not in payload
+
+    async def test_a_scripted_turn_carries_no_measured_fields(self) -> None:
+        # The asymmetry is deliberate — no model, no latency to measure — and
+        # pinned so a regression cannot quietly pollute scripted turns with
+        # meaningless zeros.
+        conversation, _, sink = build()
+        await conversation.open()
+        await drain(conversation, "Sorry, I think I've got the wrong number.")
+
+        scripted = [e for e in sink.events if e.type == "agent_turn"][-1].payload
+        assert set(scripted) == {"text", "scripted"}
+
+    async def test_agent_turn_measures_what_the_caller_waited_through(self) -> None:
+        clock = FakeClock()
+        conversation, _, sink = build(
+            brain=ScriptedBrain(
+                "One sentence.", "Two sentences.", clock=clock, seconds_per_sentence=2.0
+            ),
+            clock=clock,
+        )
+        conversation.director.state.phase = CallPhase.STALL
+        await conversation.open()
+        await drain(conversation, "Read me the number.")
+
+        payload = [
+            e for e in sink.events if e.type == "agent_turn" and not e.payload["scripted"]
+        ][-1].payload
+        assert payload["first_sentence_ms"] == 2000
+        assert payload["stream_ms"] == 4000
+        assert payload["character_pause_ms"] == 0  # the model spent far more than any delay
+
+    async def test_a_fast_model_still_pays_the_character_delay(self) -> None:
+        conversation, _, sink = build(
+            brain=ScriptedBrain("Oh, hello dear."), character_delay_ms=350
+        )
+        conversation.director.state.phase = CallPhase.STALL
+        await conversation.open()
+        actions = await drain(conversation, "Read me the number.")
+
+        payload = [
+            e for e in sink.events if e.type == "agent_turn" and not e.payload["scripted"]
+        ][-1].payload
+        assert payload["first_sentence_ms"] == 0
+        assert payload["character_pause_ms"] == 350
+        # The first pause is the character delay; the seeded tactic draw is free to
+        # add a hold pause after it.
+        pauses = [a.seconds for a in actions if isinstance(a, Pause)]
+        assert pauses[0] == 0.35
+
+    async def test_a_turn_with_no_sentence_records_none_for_first_sentence(self) -> None:
+        conversation, _, sink = build(brain=ScriptedBrain())
+        conversation.director.state.phase = CallPhase.STALL
+        await conversation.open()
+        await drain(conversation, "Read me the number.")
+
+        payload = [
+            e for e in sink.events if e.type == "agent_turn" and not e.payload["scripted"]
+        ][-1].payload
+        assert payload["first_sentence_ms"] is None
+        assert payload["fumbled"] is True
