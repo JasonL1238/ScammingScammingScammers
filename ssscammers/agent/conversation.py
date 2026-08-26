@@ -251,7 +251,7 @@ class Conversation:
         plan = self.director.opening()
         greeting = plan.speak or ""
         if greeting:
-            self._history.append(Turn("assistant", greeting))
+            self._history.append(Turn("assistant", greeting, scripted=True))
 
         await self._emit(
             "call_opened",
@@ -438,7 +438,7 @@ class Conversation:
         # written: running a disclosure through a scanner that fails closed would create a
         # path where the disclosure never gets said (G-11, G-12).
         if plan.speak is not None:
-            self._history.append(Turn("assistant", plan.speak))
+            self._history.append(Turn("assistant", plan.speak, scripted=True))
             await self._emit("agent_turn", {"text": plan.speak, "scripted": True})
             yield Say(plan.speak)
 

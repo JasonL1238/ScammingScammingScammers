@@ -121,6 +121,24 @@ class Persona:
             ]
         )
 
+    def leak_corpus(self) -> str:
+        """Prompt text whose verbatim recitation is evidence of a leak.
+
+        Deliberately *not* the whole system prompt. Two of its three parts are
+        things the character is meant to say out loud:
+
+        * the identity fact block — invented facts, and reading the card badly
+          is the best stalling move in the playbook;
+        * the ``## Things you say`` examples — speech the bundle exists to
+          produce, which a well-behaved persona will reproduce closely.
+
+        Including either turns correct behavior into a leak verdict. What
+        remains is instruction — the standing rules, the tactics, the character
+        direction — and a persona reciting ten consecutive words of *that* is
+        reading its orders to the caller.
+        """
+        return "\n\n".join([self._shared_prompt, _instructions_only(self.character_prompt)])
+
     def choose_tactic(self, rng: random.Random, *, exclude: set[Tactic] | None = None) -> Tactic:
         """Pick a stalling move according to this persona's weights.
 
@@ -136,6 +154,18 @@ class Persona:
             return Tactic.NONE
         tactics, weights = zip(*candidates, strict=True)
         return rng.choices(tactics, weights=weights, k=1)[0]
+
+
+#: The bundle heading whose body is example speech rather than instruction.
+#: Every shipped bundle carries it; a bundle without one simply contributes its
+#: whole character prompt to the leak corpus, which is the safe direction.
+EXAMPLE_SPEECH_HEADING = "## Things you say"
+
+
+def _instructions_only(character_prompt: str) -> str:
+    """The character prompt minus its example-speech section."""
+    head, sep, _ = character_prompt.partition(EXAMPLE_SPEECH_HEADING)
+    return (head if sep else character_prompt).strip()
 
 
 def _read_shared_playbooks() -> str:

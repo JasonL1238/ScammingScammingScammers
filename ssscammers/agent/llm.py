@@ -60,10 +60,21 @@ def model_overrides(settings: Settings) -> dict[str, str]:
 
 @dataclass
 class Turn:
-    """One exchange in the conversation, in API shape."""
+    """One exchange in the conversation, in API shape.
+
+    ``scripted`` records provenance rather than shape: a fixed, human-reviewed
+    line (the disclosure, the victim warning, the 911 redirect, the neutral
+    greeting) versus something the model generated. The request never sees it —
+    :meth:`ClaudeBrain._build_messages` projects ``role`` and ``content`` — but
+    every consumer judging the persona's *own* speech needs it, and inferring
+    it by matching text is a weaker reimplementation of what the producer
+    already knows. It defaults to ``False`` so an unmarked turn is judged, never
+    silently exempted.
+    """
 
     role: str
     content: str
+    scripted: bool = False
 
 
 @dataclass

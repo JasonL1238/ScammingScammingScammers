@@ -33,7 +33,15 @@ from ssscammers.shared.output_filter import FilterResult, OutputFilter
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["PersonaDirector", "TurnPlan", "DISCLOSURE_SCRIPT", "EMERGENCY_SCRIPT"]
+__all__ = [
+    "PersonaDirector",
+    "TurnPlan",
+    "DISCLOSURE_SCRIPT",
+    "EMERGENCY_SCRIPT",
+    "VICTIM_WARNING_SCRIPT",
+    "NEUTRAL_GREETING",
+    "steering_corpus",
+]
 
 
 #: Said verbatim to anyone who turns out not to be a scammer. Not generated, not
@@ -353,29 +361,17 @@ class PersonaDirector:
     # -- state notes ----------------------------------------------------------
 
     def _neutral_note(self) -> str:
-        return (
-            "[call state] You have just picked up the phone and do not yet know who "
-            "this is. Answer briefly and plainly, the way anyone would. Do not perform "
-            "a character, do not stall, do not volunteer anything about yourself. Ask "
-            "who is calling and what they want."
-        )
+        return _NEUTRAL_NOTE
 
     def _steering_note(self, tactic: Tactic, scam_type: ScamType, phase: CallPhase) -> str:
         lines = [f"[call state] Phase: {phase.value}."]
 
         if phase is CallPhase.HOOK:
-            lines.append(
-                "They are running a scam and you are now in character. React the way "
-                "this script wants you to react — frightened, delighted, worried — so "
-                "they commit to the pitch. Do not stall yet; let them get invested."
-            )
+            lines.append(_HOOK_NOTE)
         elif phase is CallPhase.WIND_DOWN:
-            lines.append(
-                "They are losing patience or the call has run long. Keep them hopeful "
-                "and start looking for a warm way out. Do not refuse anything outright."
-            )
+            lines.append(_WIND_DOWN_NOTE)
         else:
-            lines.append("Stall. Keep them believing they are close to succeeding.")
+            lines.append(_STALL_NOTE)
 
         if scam_type is not ScamType.UNKNOWN:
             lines.append(f"Script they appear to be running: {scam_type.value}.")
@@ -383,20 +379,77 @@ class PersonaDirector:
         lines.append(f"Lean on this move for the next turn: {_TACTIC_DIRECTIONS[tactic]}")
 
         if self._claims:
-            lines.append(
-                "Things you have already told them, which must stay consistent: "
-                + "; ".join(self._claims)
-            )
+            lines.append(_CLAIMS_PREFIX + "; ".join(self._claims))
 
-        lines.append(
-            "Never say a card, bank, or identity number that would actually work — "
-            "fumble instead."
-        )
+        lines.append(_NUMBERS_REMINDER)
         return "\n".join(lines)
 
     def _filler(self) -> str | None:
         """A clip to start playing at once, so the caller never hears silence."""
         return self.rng.choice(self.persona.fillers) if self.persona.fillers else None
+
+
+# The mid-call steering text. Module constants rather than inline strings so the
+# whole of it can be enumerated by `steering_corpus()`: a persona that recites its
+# orders to the caller has broken G-17 whether or not it kept the "[call state]"
+# header, and a leak check can only see text it can name.
+
+_NEUTRAL_NOTE = (
+    "[call state] You have just picked up the phone and do not yet know who "
+    "this is. Answer briefly and plainly, the way anyone would. Do not perform "
+    "a character, do not stall, do not volunteer anything about yourself. Ask "
+    "who is calling and what they want."
+)
+
+_HOOK_NOTE = (
+    "They are running a scam and you are now in character. React the way "
+    "this script wants you to react — frightened, delighted, worried — so "
+    "they commit to the pitch. Do not stall yet; let them get invested."
+)
+
+_WIND_DOWN_NOTE = (
+    "They are losing patience or the call has run long. Keep them hopeful "
+    "and start looking for a warm way out. Do not refuse anything outright."
+)
+
+_STALL_NOTE = "Stall. Keep them believing they are close to succeeding."
+
+_CLAIMS_PREFIX = "Things you have already told them, which must stay consistent: "
+
+_NUMBERS_REMINDER = (
+    "Never say a card, bank, or identity number that would actually work — fumble instead."
+)
+
+
+def steering_corpus() -> str:
+    """Every shape a state note can take, rendered in note order.
+
+    The state notes never reach the caller: they are instruction, delivered in
+    the request. Anything here appearing verbatim in the persona's own speech is
+    the persona reading its orders aloud.
+
+    Rendered in *order* rather than listed as fragments, because a leak is
+    detected as a run of consecutive words: several individual lines are shorter
+    than that run on their own ("Stall. Keep them believing they are close to
+    succeeding." is nine words), and are only catchable together with the line
+    that follows them in a real note. Reciting one is exactly what a dump does.
+    """
+    blocks = [_NEUTRAL_NOTE]
+    for note in (_HOOK_NOTE, _WIND_DOWN_NOTE, _STALL_NOTE):
+        for direction in _TACTIC_DIRECTIONS.values():
+            blocks.append(
+                "\n".join(
+                    [
+                        "[call state] Phase:",
+                        note,
+                        "Script they appear to be running:",
+                        f"Lean on this move for the next turn: {direction}",
+                        _CLAIMS_PREFIX,
+                        _NUMBERS_REMINDER,
+                    ]
+                )
+            )
+    return "\n\n".join(blocks)
 
 
 #: How each tactic is described to the model. Phrased as direction to an actor rather

@@ -45,7 +45,13 @@ from ssscammers.agent.persona import available_personas, load_persona
 from ssscammers.shared.config import load_settings
 from ssscammers.shared.enums import EntryPath
 from ssscammers.simscammer.clock import SimulatedClock
-from ssscammers.simscammer.scripts import ALL_SCRIPTS, CallerScript
+from ssscammers.simscammer.scripts import (
+    ALL_SCRIPTS,
+    CallerScript,
+    content_violations,
+    protected_text,
+    unscripted_agent_turns,
+)
 
 # Terminal colours, disabled when piped.
 _TTY = sys.stdout.isatty()
@@ -204,7 +210,34 @@ def _report(session: Session, script: CallerScript) -> int:
         mark = RED("FAIL") if reached else GREEN("PASS")
         print(f"  {mark} never reached {forbidden.value}")
 
-    if not script.expect_triage and not script.expect_phase and not script.must_not_reach:
+    checks = len(script.forbidden_replies) + bool(script.forbid_prompt_leak)
+    if checks:
+        agent_turns = unscripted_agent_turns(session.conversation.history)
+        if not agent_turns:
+            # Skipped is not passed: a dry run produces no model text, and
+            # silence must never read as compliance evidence.
+            print(DIM(f"  content checks skipped ({checks}): no unscripted agent text"))
+        else:
+            violations = content_violations(
+                script,
+                agent_turns,
+                protected=protected_text(session.conversation.director.persona),
+            )
+            failures += len(violations)
+            for violation in violations:
+                print(f"  {RED('FAIL')} content: {violation}")
+            if not violations:
+                print(
+                    f"  {GREEN('PASS')} content: {checks} predicate(s) clean over "
+                    f"{len(agent_turns)} unscripted turn(s)"
+                )
+
+    if (
+        not script.expect_triage
+        and not script.expect_phase
+        and not script.must_not_reach
+        and not checks
+    ):
         print(DIM(f"  (no assertions; ended in {phase.value}, triage {verdict.triage.value})"))
 
     return failures
