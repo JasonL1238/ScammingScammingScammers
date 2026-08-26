@@ -848,3 +848,58 @@ throwaway branches.
 - **Verification (final tree):** 708 passed / 16 skipped (11 new tests across
   the task); textloop dry exit 0; `ruff check .` clean.
 - **Escalations:** none.
+- **Green on main:** run
+  [32946995565](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/32946995565)
+  (commit `bee557e`).
+
+### T2.3 — Payload widening, second family: tick evaluations, DTMF, LLM metadata
+
+Completes roadmap Phase 2 move 2's widening list.
+
+- **Scope:** `call_opened` records the request construction (`model`, `effort`,
+  `max_tokens`; all None on a dry run); model-path `agent_turn` records the raw
+  API `stop_reason` (distinct from the judged `failure`); timer-landed
+  `phase_changed` events carry the `silence_seconds` the timer evaluated; and
+  DTMF became a first-class logged input — a dedicated `dtmf` event emitted by
+  `_drain_dtmf()` at every drain boundary (respond, tick, hangup), before the
+  planner consumes the digits.
+- **Rule 1 review** (two adversaries; findings converged so tightly the
+  cross-refutation collapsed into a joint fix):
+  - *A-1 ≡ B-1 (merged, the headline; probe-backed by both):* the first draft
+    recorded DTMF only on the caller_turn path, but a quiet tick and a hangup
+    both drained digits into the planner and logged nothing — and production
+    timing (1 Hz ticker vs the STT window) makes the quiet tick the *common*
+    drain, so non-escape keypresses — the robocall-IVR "press 1" signal this
+    line exists to observe — would essentially never be logged, while the
+    code's own comment claimed every planner input was recoverable. Replay is
+    unbroken *today* (only "5" is read anywhere, and both adversaries proved
+    the lost-digit outcomes identical), but Phase 2 is the last free moment
+    for the shape. **Fixed at the input boundary:** the `dtmf` event fires at
+    every drain, the triplicated drain collapsed into `_drain_dtmf()`, the
+    caller_turn/phase_changed `dtmf` keys were removed as redundant, and the
+    dtmf-only empty-text caller_turn branch (untested and unreachable through
+    the production transport — B-3) was deleted rather than covered. New
+    tests: quiet-tick drain, hangup drain, crash-survival (the event precedes
+    planning), escape-before-transition ordering, and none-when-none.
+  - *B-2 (survived):* `stop_reason` freshness was untested — a stash-at-open
+    mutant passed the suite. **Fixed:** a two-turn shifting-brain test pins
+    per-turn freshness. A's probe independently established the production
+    reset is sound (first statement of the stream body; runs even under a
+    zero timeout; a hung or errored turn reports None, never the prior
+    turn's value).
+  - *A-2 (note, recorded not fixed):* `ScriptedBrain` does not model
+    ClaudeBrain's per-stream `last_stop_reason` reset — deliberate: the
+    truncation test depends on a preset value persisting through a stream,
+    and the recorded-client fake scheduled later in Phase 2 is where the real
+    reset semantics get exercised.
+  - *Adjudicated no-gaps (B, evidence on file):* caller speech-energy and
+    agent-audio-finished timings belong to the golden manifest and the
+    Phase 7 media seam (roadmap's own assignment), not this task; recording
+    only transition-landing ticks is correct — quiet ticks consume zero rng
+    draws (verified against the `exits_only` path) and are pure functions of
+    clock, cadence, and state; the one exception was the dtmf buffer, which
+    the boundary event now covers.
+- **Verification (final tree):** 719 passed / 16 skipped; textloop dry exit 0;
+  `ruff check .` clean; T2.1 seed-6 pins and the T2.2 order pin green over the
+  widened payloads.
+- **Escalations:** none.

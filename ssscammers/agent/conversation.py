@@ -261,6 +261,12 @@ class Conversation:
                 "entry_path": self.director.entry_path.value,
                 "phase": plan.phase.value,
                 "seed": self.seed,
+                # The request construction this call will use, recorded once: a
+                # replayed call must know which model produced its replies. All
+                # None on a dry run, where no request is ever built.
+                "model": getattr(self.brain, "model", None),
+                "effort": getattr(self.brain, "effort", None),
+                "max_tokens": getattr(self.brain, "max_tokens", None),
             },
         )
         return [Say(greeting)] if greeting else []
@@ -288,6 +294,20 @@ class Conversation:
         """Buffer a keypress. ``5`` is the escape hatch for a real caller."""
         self._pending_dtmf += digit
 
+    async def _drain_dtmf(self) -> str:
+        """Take the buffered digits and log them at the moment they matter.
+
+        The event is emitted at the drain — the decision boundary — not at the
+        keypress, and at *every* drain site: a digit consumed by a quiet tick or a
+        hangup is still an input the planner saw, and the log must be able to
+        re-drive the call from inputs alone. Non-escape digits are also the
+        robocall-IVR signal ("press 1") this line exists to observe.
+        """
+        dtmf, self._pending_dtmf = self._pending_dtmf, ""
+        if dtmf:
+            await self._emit("dtmf", {"digits": dtmf})
+        return dtmf
+
     # -- turns ----------------------------------------------------------------
 
     async def respond(self, utterance: str) -> AsyncIterator[Action]:
@@ -303,21 +323,21 @@ class Conversation:
             self._last_caller_audio = self.clock()
             self._history.append(Turn("user", utterance))
 
+        dtmf = await self._drain_dtmf()
+
         # The plan is made first so the caller_turn event can carry the verdict this
         # utterance produced — the classification and its evidence, not the stale one
         # from a turn ago. The observable order is unchanged: caller_turn still
         # precedes everything _execute emits.
         try:
-            plan = self._advance(utterance)
+            plan = self._advance(utterance, dtmf=dtmf)
         except Exception:
             # The input that crashes the planner is the most forensically valuable
             # one; the event must survive even when planning does not. The marker is
             # explicit because absent triage keys would be ambiguous between three
             # facts: planning crashed, the plan carried no verdict, a serializer bug.
             if spoke:
-                await self._emit(
-                    "caller_turn", {"text": utterance, "planning_failed": True}
-                )
+                await self._emit("caller_turn", {"text": utterance, "planning_failed": True})
             raise
         if spoke:
             verdict = plan.triage
@@ -338,18 +358,21 @@ class Conversation:
         if self._ended or self._started_at is None:
             return
 
-        dtmf, self._pending_dtmf = self._pending_dtmf, ""
+        dtmf = await self._drain_dtmf()
+        silence = self.silence_seconds
         plan = self.director.check_exits(
             elapsed_seconds=self.elapsed_seconds,
-            silence_seconds=self.silence_seconds,
+            silence_seconds=silence,
             dtmf_digits=dtmf,
             caller_hung_up=False,
         )
 
         # A tick evaluates the machine, so it can *land* a transition — probation
         # expiring into HOOK is the clearest case, and it is the moment a reviewer most
-        # wants to see. Discarding the plan silently would drop it from the canonical log.
-        await self._emit_transition(plan.transition, on_timer=True)
+        # wants to see. Discarding the plan silently would drop it from the canonical
+        # log. The evaluation state rides along: a dead-air hangup whose event does
+        # not say how silent the line was cannot be audited.
+        await self._emit_transition(plan.transition, on_timer=True, silence_seconds=silence)
 
         if not (plan.speak or plan.hang_up):
             # Nothing to perform. `_last_plan` is deliberately not touched: it reports
@@ -364,15 +387,15 @@ class Conversation:
         """The far end went away. Nothing is spoken; the call is simply over."""
         if self._ended:
             return []
-        plan = self._advance("", caller_hung_up=True)
+        dtmf = await self._drain_dtmf()
+        plan = self._advance("", dtmf=dtmf, caller_hung_up=True)
         actions = [action async for action in self._execute(plan)]
         if not any(isinstance(action, HangUp) for action in actions):
             actions.append(HangUp(EndReason.CALLER_HANGUP))
             self._ended = True
         return actions
 
-    def _advance(self, utterance: str, *, caller_hung_up: bool = False) -> TurnPlan:
-        dtmf, self._pending_dtmf = self._pending_dtmf, ""
+    def _advance(self, utterance: str, *, dtmf: str = "", caller_hung_up: bool = False) -> TurnPlan:
         plan = self.director.handle_caller_turn(
             utterance,
             elapsed_seconds=self.elapsed_seconds,
@@ -383,9 +406,17 @@ class Conversation:
         self._last_plan = plan
         return plan
 
-    async def _emit_transition(self, transition: Transition | None, *, on_timer: bool = False) -> None:
+    async def _emit_transition(
+        self,
+        transition: Transition | None,
+        *,
+        on_timer: bool = False,
+        silence_seconds: float | None = None,
+    ) -> None:
         """Log a phase change, if there was one. ``on_timer`` marks a change no caller
-        turn triggered — the hard cap, dead air, probation expiring."""
+        turn triggered — the hard cap, dead air, probation expiring — and carries the
+        silence the timer evaluated, since no caller_turn event records it. Drained
+        digits are their own ``dtmf`` event, emitted just before this one."""
         if transition is None or not transition.changed:
             return
         payload: dict[str, Any] = {
@@ -395,6 +426,8 @@ class Conversation:
         }
         if on_timer:
             payload["on_timer"] = True
+            if silence_seconds is not None:
+                payload["silence_seconds"] = round(silence_seconds, 3)
         await self._emit("phase_changed", payload)
 
     async def _execute(self, plan: TurnPlan, *, emit_transition: bool = True) -> AsyncIterator[Action]:
@@ -536,6 +569,9 @@ class Conversation:
                 "first_sentence_ms": first_sentence_ms,
                 "stream_ms": stream_ms,
                 "character_pause_ms": character_pause_ms,
+                # The raw API stop reason, distinct from `failure`: "truncated" is
+                # this project's judgment, "max_tokens" is what the API said.
+                "stop_reason": getattr(self.brain, "last_stop_reason", None),
             },
         )
 

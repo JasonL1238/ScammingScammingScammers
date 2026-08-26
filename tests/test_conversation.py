@@ -1223,3 +1223,150 @@ class TestPayloadWidening:
         ][-1].payload
         assert payload["first_sentence_ms"] is None
         assert payload["fumbled"] is True
+
+
+class TestPayloadWideningSecondFamily:
+    """Roadmap Phase 2, move two (second family): tick evaluations and LLM
+    request metadata. Every input the planner saw and every request detail a
+    replay needs is now recoverable from the log alone."""
+
+    async def test_call_opened_records_the_request_construction(self) -> None:
+        brain = ScriptedBrain("Hello dear.")
+        brain.model = "claude-test-1"
+        brain.effort = "low"
+        brain.max_tokens = 400
+        conversation, _, sink = build(brain=brain)
+        await conversation.open()
+
+        payload = sink.events[0].payload
+        assert payload["model"] == "claude-test-1"
+        assert payload["effort"] == "low"
+        assert payload["max_tokens"] == 400
+
+    async def test_a_dry_call_records_no_request_construction(self) -> None:
+        conversation, _, sink = build()
+        await conversation.open()
+        payload = sink.events[0].payload
+        assert payload["model"] is None
+        assert payload["effort"] is None
+        assert payload["max_tokens"] is None
+
+    async def test_agent_turn_records_the_raw_stop_reason(self) -> None:
+        brain = ScriptedBrain("A full reply.")
+        brain.last_stop_reason = "end_turn"
+        conversation, _, sink = build(brain=brain)
+        conversation.director.state.phase = CallPhase.STALL
+        await conversation.open()
+        await drain(conversation, "Read me the number.")
+
+        payload = [
+            e for e in sink.events if e.type == "agent_turn" and not e.payload["scripted"]
+        ][-1].payload
+        assert payload["stop_reason"] == "end_turn"
+        assert payload["failure"] is None
+
+    async def test_a_dead_air_hangup_records_how_silent_the_line_was(self) -> None:
+        conversation, clock, sink = build(dead_air_seconds=60.0)
+        await conversation.open()
+        clock.advance(61)
+        actions = [a async for a in conversation.tick()]
+        assert any(isinstance(a, HangUp) for a in actions)
+
+        change = [e for e in sink.events if e.type == "phase_changed"][-1]
+        assert change.payload["on_timer"] is True
+        assert change.payload["silence_seconds"] == 61.0
+
+    async def test_the_escape_digits_are_logged_before_the_transition_they_fire(self) -> None:
+        conversation, clock, sink = build()
+        await conversation.open()
+        conversation.note_dtmf("5")
+        clock.advance(1)
+        [a async for a in conversation.tick()]
+
+        types = sink.types()
+        assert types.index("dtmf") < types.index("phase_changed")
+        assert [e for e in sink.events if e.type == "dtmf"][-1].payload == {"digits": "5"}
+        change = [e for e in sink.events if e.type == "phase_changed"][-1]
+        assert change.payload["on_timer"] is True
+
+    async def test_a_quiet_tick_still_logs_the_digits_it_drained(self) -> None:
+        # The common production case: media ticks at 1 Hz, so a keypress is
+        # usually drained by a tick that lands no transition. The input the
+        # planner saw must still be recoverable from the log — non-escape
+        # digits are the robocall-IVR signal this line exists to observe.
+        conversation, clock, sink = build()
+        await conversation.open()
+        conversation.note_dtmf("1")
+        clock.advance(1)
+        assert [a async for a in conversation.tick()] == []
+
+        assert [e.payload for e in sink.events if e.type == "dtmf"] == [{"digits": "1"}]
+        await drain(conversation, "Hello?")
+        # ...and the buffer was genuinely drained: the turn logs no second event.
+        assert len([e for e in sink.events if e.type == "dtmf"]) == 1
+
+    async def test_a_hangup_still_logs_the_digits_it_drained(self) -> None:
+        conversation, _, sink = build()
+        await conversation.open()
+        conversation.note_dtmf("5")
+        await conversation.caller_hung_up()
+
+        assert [e.payload for e in sink.events if e.type == "dtmf"] == [{"digits": "5"}]
+
+    async def test_dtmf_pressed_before_a_turn_is_logged_before_the_caller_turn(self) -> None:
+        conversation, _, sink = build()
+        await conversation.open()
+        conversation.note_dtmf("1")
+        await drain(conversation, "Hello, who is this?")
+
+        types = sink.types()
+        assert types.index("dtmf") < types.index("caller_turn")
+        assert [e for e in sink.events if e.type == "dtmf"][-1].payload == {"digits": "1"}
+
+    async def test_digits_survive_a_crashing_planner(self) -> None:
+        # The dtmf event is emitted before planning runs, so the input outlives
+        # the crash alongside the marked caller_turn.
+        conversation, _, sink = build()
+        await conversation.open()
+
+        def boom(*args: object, **kwargs: object) -> None:
+            raise RuntimeError("director bug")
+
+        conversation.director.handle_caller_turn = boom  # type: ignore[method-assign]
+        conversation.note_dtmf("1")
+        with pytest.raises(RuntimeError):
+            await drain(conversation, "Crash now.")
+
+        assert [e.payload for e in sink.events if e.type == "dtmf"] == [{"digits": "1"}]
+
+    async def test_a_turn_without_dtmf_emits_no_dtmf_event(self) -> None:
+        conversation, _, sink = build()
+        await conversation.open()
+        await drain(conversation, "Hello?")
+        assert "dtmf" not in sink.types()
+
+    async def test_stop_reason_is_this_turns_not_the_previous_ones(self) -> None:
+        # Kills the stash-at-open mutant: a stop_reason read once and replayed
+        # on every turn would report turn one's value forever.
+        class ShiftingBrain:
+            def __init__(self) -> None:
+                self.reasons = iter(["end_turn", "max_tokens"])
+                self.last_stop_reason: str | None = None
+
+            async def stream_reply(self, history, state_note=None):  # noqa: ANN001
+                self.last_stop_reason = next(self.reasons)
+                yield "A sentence."
+
+        conversation, _, sink = build()
+        conversation.brain = ShiftingBrain()  # type: ignore[assignment]
+        conversation.director.state.phase = CallPhase.STALL
+        await conversation.open()
+        await drain(conversation, "First turn.")
+        await drain(conversation, "Second turn.")
+
+        reasons = [
+            e.payload["stop_reason"]
+            for e in sink.events
+            if e.type == "agent_turn" and not e.payload["scripted"]
+        ]
+        assert reasons == ["end_turn", "max_tokens"]
