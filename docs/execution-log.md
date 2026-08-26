@@ -1117,3 +1117,87 @@ paths, release within two turns."
   under the amended cache-clearing procedure: legit bar raised → 24 failures;
   emergency signals broadened → 34 failures; restored → 120 passed with the
   source tree clean.
+- **Green on main:** run
+  [32989606150](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/32989606150)
+  (commit `9f6f98b`).
+
+### T2.7 — The replay seam
+
+- **Scope:** `ssscammers/simscammer/replay.py` — `CallRecording` /
+  `RecordedTurn` (raw deltas, so replay re-runs the splitter rather than
+  trusting a recording of its own output), `ReplayBrain` on the `stream_reply`
+  seam, and `RecordedAnthropicClient` plugging into a real `ClaudeBrain` so
+  that module's streaming path runs offline. `ClaudeBrain._client` became an
+  injectable `client`; the sentence loop was extracted as public
+  `stream_sentences`; `build_messages` made public because replay honours the
+  same no-addressable-turn guard through it. New `tests/test_llm.py` gives
+  `llm.py` its own home module.
+- **Rule 1 review** (two adversaries; they converged independently on the same
+  three headline defects, each with an executed repro):
+  - *A-F1 ≡ B-F2 (HIGH):* `last_stop_reason` was assigned after the sentence
+    loop instead of where production assigns it — inside the delta stream. A
+    consumer that breaks early never reached it, and `_generate` breaks early on
+    **every output-filter block**, so a filter-blocked truncated turn replayed
+    as `failure=None` where the live call recorded `truncated`. **Fixed** by
+    moving the assignment into the inner generator; both adversaries verified
+    the depths then agree on break-after-1, break-after-tail, and no-break.
+  - *B-F1 ≡ A-F6 (BLOCKER for T2.8):* `ReplayBrain` exposed no
+    `model`/`effort`/`max_tokens`, which `call_opened` reads — so **the first
+    event of every replay differed**, and the exit criterion ("replays
+    byte-identically … payloads") failed before the caller spoke. The recording
+    already carried the fields, write-only. **Fixed** with properties, and
+    `check_environment` now refuses a replay whose request construction differs.
+  - *A-F2 ≡ B-F4 (HIGH):* `exhausted` reported True after a *diverged* replay —
+    the overrun check preceded the increment, and `DivergedError` subclasses
+    `AssertionError`, which `_generate` swallows into a fumble. A runner
+    following the docstring would pass a wholly diverged run. B caught the
+    smoking gun: my own test asserted `brain.index == 1` rather than the public
+    property, because the public property did not work. **Fixed:** one shared
+    `_Cursor` counts divergences, and `complete` is false after any of them.
+  - *A-F3 (MED-HIGH):* the *deeper* seam had no divergence checking at all,
+    while the module docstring claimed both refused to paper over it. **Fixed:**
+    `describe_request` reads the steering back out of the built request, so both
+    depths run the identical check — and that function is also the half a
+    recorder needs (B-F6).
+  - *A-F4 (MED):* the depths disagreed on a history with no addressable caller
+    turn — the real brain returns without touching the wire, `ReplayBrain`
+    consumed a turn and desynced permanently. **Fixed** by running the
+    production `build_messages` guard.
+  - *A-F5 (MED):* the constructor failed closed while `from_json` failed open
+    (`pack_version` → `""`, `stop_reason` → `None`), disabling the pack guard
+    for every hand-written fixture. **Fixed**, defaults now mirror the
+    dataclass.
+  - *B-F3 + B-F9 (HIGH):* two of the three properties the task exists to cover
+    had **zero** kills — deleting the tail flush (the truncation path) and the
+    splitter's decimal and em-dash rules broke no test, and the `max_tokens`
+    warning was unasserted. **Fixed** in `tests/test_llm.py`. One quirk found
+    and pinned rather than changed under a test task: a closing quote after a
+    terminator starts the next chunk.
+  - *B-F5 (MED-HIGH):* `strict=True` was the default but had never run against
+    a real `Conversation`, and `None` conflated "unsteered" with "unrecorded".
+    **Fixed:** an `UNRECORDED` sentinel, and a test that records the steering
+    off the deep seam and replays with every check armed.
+  - *B-F7 (MED):* the hand-enumerated JSON dropped a new field silently (B
+    simulated it: 0/873 failures). **Fixed:** the round-trip test is driven off
+    `dataclasses.fields`. B's adjudication that the hand-written `to_json` earns
+    its place for key order (metadata first, so a golden's diff opens on the
+    fields a reviewer checks) is now stated in the code.
+  - *B-F10 (LOW-MED):* the two depths carried duplicate cursors that had
+    already drifted three ways. **Fixed:** one `_Cursor`.
+  - *B-F11 (LOW):* `llm.py` had no home test module. **Fixed.**
+  - *B-F8 / A-F7 (recorded):* `check_environment` still cannot see the caps or
+    the entry path. Those belong to the manifest carrying the caller's side, and
+    T2.8 checks them there — recorded so the boundary is deliberate.
+- **Adjudicated for T2.8** (B's highest-value question): the model-recording /
+  caller-script split is correct — the caller side is authored and
+  human-reviewed, and capturing authored input would create a second source of
+  truth for something a person edits. The recording is genuinely *not*
+  redundant with the event log (proven on the blocked-sentence case: the
+  recording holds the raw model output, the event log the post-filter speech).
+  What T2.8 must add, on the manifest side: binding a recording to its script,
+  per-turn timing, tick cadence (`Session` never calls `tick()` at all today),
+  and the civil date.
+- **Verification (final tree):** 908 passed / 16 skipped; textloop dry exit 0;
+  `ruff check .` clean. The round trip is now a test rather than a claim: a call
+  driven through the deep seam and the same recording driven through the fast
+  one emit **identical event streams**, including the truncation labels.

@@ -646,7 +646,7 @@ class TestTheRequestSentToTheModel:
         await drain(conversation, "Hello, is this the account holder?")
 
         assert brain.histories, "the model was never consulted"
-        return ClaudeBrain._build_messages(brain.histories[0], note)
+        return ClaudeBrain.build_messages(brain.histories[0], note)
 
     async def test_the_first_message_is_never_the_greeting(self) -> None:
         # `open()` records "Hello?" before the caller has said anything, so a call's
@@ -718,7 +718,7 @@ class TestTheRequestSentToTheModel:
         from ssscammers.agent.llm import ClaudeBrain
 
         brain = ClaudeBrain(system_prompt="you are a persona", api_key="not-a-real-key")
-        accepted = set(inspect.signature(brain._client.messages.stream).parameters)
+        accepted = set(inspect.signature(brain.client.messages.stream).parameters)
         unknown = set(brain._request_kwargs([Turn("user", "hi")], None)) - accepted
         assert not unknown, f"the SDK would reject: {sorted(unknown)}"
 
@@ -777,10 +777,10 @@ class TestTheRequestSentToTheModel:
             return texts
 
         history = [Turn("assistant", NEUTRAL_GREETING), Turn("user", "Is this Marjorie?")]
-        first = ClaudeBrain._build_messages(history, "[call state] assessing")
+        first = ClaudeBrain.build_messages(history, "[call state] assessing")
 
         history = history + [Turn("assistant", "Who's this?"), Turn("user", "Your bank.")]
-        second = ClaudeBrain._build_messages(history, "[call state] hook, tactic=mishear")
+        second = ClaudeBrain.build_messages(history, "[call state] hook, tactic=mishear")
 
         prefix = cached_prefix(first)
         assert prefix, "turn one cached nothing"
@@ -795,7 +795,7 @@ class TestTheRequestSentToTheModel:
         from ssscammers.agent.llm import ClaudeBrain
 
         history = [Turn("user", "one"), Turn("assistant", "two"), Turn("user", "three")]
-        messages = ClaudeBrain._build_messages(history, None)
+        messages = ClaudeBrain.build_messages(history, None)
         marked = [i for i, m in enumerate(messages) if isinstance(m["content"], list)]
         assert marked == [len(messages) - 1]
 
@@ -831,7 +831,7 @@ class TestTheRequestSentToTheModel:
             Turn("user", "Is this the account holder?"),
             Turn("assistant", "Oh, hello dear."),
         ]
-        messages = ClaudeBrain._build_messages(history, "[call state] stall")
+        messages = ClaudeBrain.build_messages(history, "[call state] stall")
         assert [m["role"] for m in messages] == ["user"]
         assert "<system-reminder>" in self.text_of(messages[-1])
 
@@ -847,7 +847,7 @@ class TestTheRequestSentToTheModel:
             Turn("assistant", "Sorry, who is this?"),
             Turn("assistant", "Hello?"),
         ]
-        assert [m["role"] for m in ClaudeBrain._build_messages(history, None)] == ["user"]
+        assert [m["role"] for m in ClaudeBrain.build_messages(history, None)] == ["user"]
 
     async def test_the_trailing_drop_says_so_in_the_log(
         self, caplog: pytest.LogCaptureFixture
@@ -859,7 +859,7 @@ class TestTheRequestSentToTheModel:
 
         history = [Turn("user", "hello?"), Turn("assistant", "Oh, hello dear.")]
         with caplog.at_level(logging.WARNING, logger="ssscammers.agent.llm"):
-            ClaudeBrain._build_messages(history, None)
+            ClaudeBrain.build_messages(history, None)
         assert "prefill" in caplog.text
         assert "dropped 1 trailing" in caplog.text
 
@@ -867,7 +867,7 @@ class TestTheRequestSentToTheModel:
         from ssscammers.agent.llm import ClaudeBrain
 
         history = [Turn("user", "hello?"), Turn("assistant", "Oh, hello dear.")]
-        messages = ClaudeBrain._build_messages(history, None)
+        messages = ClaudeBrain.build_messages(history, None)
         assert [m["role"] for m in messages] == ["user"]
         assert self.text_of(messages[-1]) == "hello?"
 
@@ -883,7 +883,7 @@ class TestTheRequestSentToTheModel:
 
         conversation, _, _ = build()
         await conversation.open()
-        assert ClaudeBrain._build_messages(conversation.history, None) == []
+        assert ClaudeBrain.build_messages(conversation.history, None) == []
 
 
 class TestTheOwnersRealNumberIsUnspeakable:

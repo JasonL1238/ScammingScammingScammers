@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["ClaudeBrain", "Turn", "MODEL", "EFFORT", "model_overrides"]
+__all__ = ["ClaudeBrain", "Turn", "MODEL", "EFFORT", "model_overrides", "stream_sentences"]
 
 MODEL = "claude-sonnet-5"
 EFFORT = "low"
@@ -65,7 +65,7 @@ class Turn:
     ``scripted`` records provenance rather than shape: a fixed, human-reviewed
     line (the disclosure, the victim warning, the 911 redirect, the neutral
     greeting) versus something the model generated. The request never sees it —
-    :meth:`ClaudeBrain._build_messages` projects ``role`` and ``content`` — but
+    :meth:`ClaudeBrain.build_messages` projects ``role`` and ``content`` — but
     every consumer judging the persona's *own* speech needs it, and inferring
     it by matching text is a weaker reimplementation of what the producer
     already knows. It defaults to ``False`` so an unmarked turn is judged, never
@@ -100,7 +100,17 @@ class ClaudeBrain:
     effort: str = EFFORT
     max_tokens: int = 400
 
-    _client: Any = field(init=False, default=None, repr=False)
+    client: Any = field(default=None, repr=False)
+    """The Anthropic client, or ``None`` to construct one from the SDK.
+
+    The seam exists for the recorded-client fake: replaying a call through an
+    injected client runs *this module's real request construction* — cache
+    breakpoints, the state-note fold, edge-turn stripping, sentence splitting,
+    stop-reason handling — none of which ``--dry`` executes, because it sets
+    ``brain=None`` and skips the class entirely. A fake supplied here is the
+    only way those paths are exercised offline.
+    """
+
     last_stop_reason: str | None = field(init=False, default=None, repr=False)
     """Why the most recent turn stopped. ``"max_tokens"`` means the reply was cut mid-word.
 
@@ -111,6 +121,9 @@ class ClaudeBrain:
     """
 
     def __post_init__(self) -> None:
+        if self.client is not None:
+            return
+
         # Imported lazily so the safety test suite runs without the SDK installed.
         try:
             import anthropic
@@ -120,7 +133,7 @@ class ClaudeBrain:
                 "or `pip install anthropic`"
             ) from exc
 
-        self._client = (
+        self.client = (
             anthropic.AsyncAnthropic(api_key=self.api_key)
             if self.api_key
             else anthropic.AsyncAnthropic()
@@ -150,7 +163,7 @@ class ClaudeBrain:
         ]
 
     @staticmethod
-    def _build_messages(history: Sequence[Turn], state_note: str | None) -> list[dict[str, Any]]:
+    def build_messages(history: Sequence[Turn], state_note: str | None) -> list[dict[str, Any]]:
         """Assemble the message list, state note folded into the last caller turn.
 
         This model has no mid-conversation ``role: "system"`` message, so the note is
@@ -188,7 +201,7 @@ class ClaudeBrain:
             "thinking": {"type": "disabled"},
             "output_config": {"effort": self.effort},
             "system": self._system_blocks(),
-            "messages": self._build_messages(history, state_note),
+            "messages": self.build_messages(history, state_note),
         }
 
     # -- generation -----------------------------------------------------------
@@ -213,23 +226,15 @@ class ClaudeBrain:
             logger.warning("no caller turn to respond to; skipping the model this turn")
             return
 
-        buffer = ""
-        async for delta in self._stream_text(kwargs):
-            buffer += delta
-            while (cut := _sentence_boundary(buffer)) is not None:
-                sentence, buffer = buffer[:cut].strip(), buffer[cut:].lstrip()
-                if sentence:
-                    yield sentence
-
-        if buffer.strip():
-            yield buffer.strip()
+        async for sentence in stream_sentences(self._stream_text(kwargs)):
+            yield sentence
 
     async def _stream_text(self, kwargs: dict[str, Any]) -> AsyncIterator[str]:
         """Stream raw text deltas, recording why the turn stopped.
 
         The non-beta endpoint: every parameter in this request is GA on this model.
         """
-        async with self._client.messages.stream(**kwargs) as stream:
+        async with self.client.messages.stream(**kwargs) as stream:
             async for text in stream.text_stream:
                 yield text
 
@@ -241,6 +246,28 @@ class ClaudeBrain:
                     "be heard trailing off and the fragment enters the transcript",
                     self.max_tokens,
                 )
+
+
+async def stream_sentences(deltas: AsyncIterator[str]) -> AsyncIterator[str]:
+    """Cut a raw text stream into sentence-sized chunks, flushing the tail.
+
+    Public because replay drives it too: a recorded call is replayed as the raw
+    deltas the API sent, so the splitter is *re-run* rather than bypassed. A
+    boundary bug is exactly the kind that would survive a recording of its own
+    already-split output.
+    """
+    buffer = ""
+    async for delta in deltas:
+        buffer += delta
+        while (cut := _sentence_boundary(buffer)) is not None:
+            sentence, buffer = buffer[:cut].strip(), buffer[cut:].lstrip()
+            if sentence:
+                yield sentence
+
+    # Whatever never reached a boundary is still speech, and a truncated reply
+    # ends here by definition.
+    if buffer.strip():
+        yield buffer.strip()
 
 
 def _finish_newest_turn(messages: list[dict[str, Any]], state_note: str | None) -> None:
