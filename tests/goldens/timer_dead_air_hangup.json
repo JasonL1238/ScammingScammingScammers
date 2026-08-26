@@ -1,0 +1,115 @@
+{
+  "events": [
+    {
+      "seq": 1,
+      "type": "call_opened",
+      "at_seconds": 0.0,
+      "call_sid": "CAtimer_dead_air_hangup",
+      "payload": {
+        "persona": "marjorie",
+        "caller": "+19375559999",
+        "entry_path": "direct",
+        "phase": "stall",
+        "seed": 31,
+        "model": "claude-sonnet-5",
+        "effort": "low",
+        "max_tokens": 400
+      }
+    },
+    {
+      "seq": 2,
+      "type": "caller_turn",
+      "at_seconds": 25.0,
+      "call_sid": "CAtimer_dead_air_hangup",
+      "payload": {
+        "text": "Hello, this is the refunds department. We refunded too much to your account.",
+        "triage": "scam",
+        "triage_confidence": 0.45,
+        "scam_type": "refund_overpayment",
+        "emergency": false,
+        "threat": false,
+        "signals": [
+          {
+            "pattern": "\\brefund(?:ed)? (?:too much|the wrong amount)\\b",
+            "weight": 0.45,
+            "toward": "scam",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "seq": 3,
+      "type": "agent_turn",
+      "at_seconds": 25.989,
+      "call_sid": "CAtimer_dead_air_hangup",
+      "payload": {
+        "text": "Hello? Are you still there, dear?",
+        "scripted": false,
+        "tactic": "mishear",
+        "phase": "stall",
+        "failure": null,
+        "filler": "sorry_dear.wav",
+        "character_delay_ms": 989,
+        "fumbled": false,
+        "first_sentence_ms": 0,
+        "stream_ms": 989,
+        "character_pause_ms": 989,
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "seq": 4,
+      "type": "hold",
+      "at_seconds": 85.989,
+      "call_sid": "CAtimer_dead_air_hangup",
+      "payload": {
+        "seconds": 60,
+        "clip": "kettle_boiling.wav"
+      }
+    },
+    {
+      "seq": 5,
+      "type": "phase_changed",
+      "at_seconds": 145.989,
+      "call_sid": "CAtimer_dead_air_hangup",
+      "payload": {
+        "from": "stall",
+        "to": "terminate",
+        "trigger": "dead_air",
+        "on_timer": true,
+        "silence_seconds": 60.0
+      }
+    },
+    {
+      "seq": 6,
+      "type": "call_ended",
+      "at_seconds": 145.989,
+      "call_sid": "CAtimer_dead_air_hangup",
+      "payload": {
+        "phase": "terminate",
+        "reason": "dead_air"
+      }
+    }
+  ],
+  "transcript": [
+    {
+      "role": "assistant",
+      "scripted": true,
+      "content": "Hello?"
+    },
+    {
+      "role": "user",
+      "scripted": false,
+      "content": "Hello, this is the refunds department. We refunded too much to your account."
+    },
+    {
+      "role": "assistant",
+      "scripted": false,
+      "content": "Hello? Are you still there, dear?"
+    }
+  ],
+  "steering": [
+    "[call state] Phase: stall.\nStall. Keep them believing they are close to succeeding.\nScript they appear to be running: refund_overpayment.\nLean on this move for the next turn: mishear one important word — an amount, a name, an agency — and react to the wrong one.\nNever say a card, bank, or identity number that would actually work — fumble instead."
+  ]
+}

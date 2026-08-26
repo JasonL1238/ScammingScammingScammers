@@ -29,11 +29,9 @@ import argparse
 import asyncio
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
 
 from ssscammers.agent.conversation import (
     Action,
-    Conversation,
     HangUp,
     Pause,
     PlayClip,
@@ -52,6 +50,7 @@ from ssscammers.simscammer.scripts import (
     protected_text,
     unscripted_agent_turns,
 )
+from ssscammers.simscammer.session import Session
 
 # Terminal colours, disabled when piped.
 _TTY = sys.stdout.isatty()
@@ -66,42 +65,6 @@ def _style(code: str) -> Callable[[str], str]:
 
 DIM, BOLD = _style("2"), _style("1")
 RED, GREEN, YELLOW, CYAN = _style("31"), _style("32"), _style("33"), _style("36")
-
-
-@dataclass
-class Session:
-    """One simulated call, driven through the production conversation driver.
-
-    Real time is the wrong scale here: a script that would take forty minutes on
-    the phone has to run in a second, and a ninety-second hold has to *count*
-    toward the caps without anyone waiting for it — hence the injected
-    :class:`~ssscammers.simscammer.clock.SimulatedClock` and a fixed
-    seconds-per-turn advance.
-    """
-
-    conversation: Conversation
-    clock: SimulatedClock
-    seconds_per_turn: float = 25.0
-
-    @property
-    def elapsed(self) -> float:
-        # The production measurement, not a parallel one that could drift from
-        # the elapsed the state machine actually uses for cap decisions.
-        return self.conversation.elapsed_seconds
-
-    async def say(self, utterance: str) -> tuple[list[Action], str | None]:
-        """Feed one caller line in; return the actions and what was actually spoken."""
-        self.clock.advance(self.seconds_per_turn)
-        actions = [action async for action in self.conversation.respond(utterance)]
-
-        # Pauses and holds are time the caller really would have spent on the line.
-        for action in actions:
-            if isinstance(action, Pause):
-                self.clock.advance(action.seconds)
-        self.conversation.note_agent_audio_finished()
-
-        spoken = " ".join(a.text for a in actions if isinstance(a, Say)).strip()
-        return actions, spoken or None
 
 
 def _describe(session: Session, actions: list[Action]) -> str:

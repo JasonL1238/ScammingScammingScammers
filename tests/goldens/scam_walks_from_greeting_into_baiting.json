@@ -1,0 +1,452 @@
+{
+  "events": [
+    {
+      "seq": 1,
+      "type": "call_opened",
+      "at_seconds": 0.0,
+      "call_sid": "CAscam_walks_from_greeting_into_baiting",
+      "payload": {
+        "persona": "dot",
+        "caller": "+19375559999",
+        "entry_path": "direct",
+        "phase": "greeting",
+        "seed": 41,
+        "model": "claude-sonnet-5",
+        "effort": "low",
+        "max_tokens": 400
+      }
+    },
+    {
+      "seq": 2,
+      "type": "caller_turn",
+      "at_seconds": 25.0,
+      "call_sid": "CAscam_walks_from_greeting_into_baiting",
+      "payload": {
+        "text": "Hello, I'm calling from Windows technical department.",
+        "triage": "unclear",
+        "triage_confidence": 0.15,
+        "scam_type": "unknown",
+        "emergency": false,
+        "threat": false,
+        "signals": [
+          {
+            "pattern": "self-identified",
+            "weight": 0.15,
+            "toward": "legit",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "seq": 3,
+      "type": "phase_changed",
+      "at_seconds": 25.0,
+      "call_sid": "CAscam_walks_from_greeting_into_baiting",
+      "payload": {
+        "from": "greeting",
+        "to": "assessing",
+        "trigger": "caller_spoke"
+      }
+    },
+    {
+      "seq": 4,
+      "type": "agent_turn",
+      "at_seconds": 25.316,
+      "call_sid": "CAscam_walks_from_greeting_into_baiting",
+      "payload": {
+        "text": "Hello? Who is this, please?",
+        "scripted": false,
+        "tactic": "none",
+        "phase": "assessing",
+        "failure": null,
+        "filler": "cough_small.wav",
+        "character_delay_ms": 316,
+        "fumbled": false,
+        "first_sentence_ms": 0,
+        "stream_ms": 316,
+        "character_pause_ms": 316,
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "seq": 5,
+      "type": "caller_turn",
+      "at_seconds": 50.316,
+      "call_sid": "CAscam_walks_from_greeting_into_baiting",
+      "payload": {
+        "text": "Your computer is infected and it is sending errors to our server.",
+        "triage": "scam",
+        "triage_confidence": 0.45,
+        "scam_type": "tech_support",
+        "emergency": false,
+        "threat": false,
+        "signals": [
+          {
+            "pattern": "self-identified",
+            "weight": 0.15,
+            "toward": "legit",
+            "count": 1
+          },
+          {
+            "pattern": "\\byour (?:computer|pc|router|device) (?:is|has been) (?:infected|compromised|hacked)\\b",
+            "weight": 0.45,
+            "toward": "scam",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "seq": 6,
+      "type": "agent_turn",
+      "at_seconds": 53.622,
+      "call_sid": "CAscam_walks_from_greeting_into_baiting",
+      "payload": {
+        "text": "My computer? I don't think I have one of those.",
+        "scripted": false,
+        "tactic": "none",
+        "phase": "assessing",
+        "failure": null,
+        "filler": "cough_small.wav",
+        "character_delay_ms": 3306,
+        "fumbled": false,
+        "first_sentence_ms": 0,
+        "stream_ms": 3306,
+        "character_pause_ms": 3306,
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "seq": 7,
+      "type": "caller_turn",
+      "at_seconds": 78.622,
+      "call_sid": "CAscam_walks_from_greeting_into_baiting",
+      "payload": {
+        "text": "I need you to sit at your computer and press the Windows key.",
+        "triage": "scam",
+        "triage_confidence": 0.9,
+        "scam_type": "tech_support",
+        "emergency": false,
+        "threat": false,
+        "signals": [
+          {
+            "pattern": "self-identified",
+            "weight": 0.15,
+            "toward": "legit",
+            "count": 1
+          },
+          {
+            "pattern": "\\byour (?:computer|pc|router|device) (?:is|has been) (?:infected|compromised|hacked)\\b",
+            "weight": 0.45,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bpress (?:the )?windows key\\b",
+            "weight": 0.45,
+            "toward": "scam",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "seq": 8,
+      "type": "phase_changed",
+      "at_seconds": 78.622,
+      "call_sid": "CAscam_walks_from_greeting_into_baiting",
+      "payload": {
+        "from": "assessing",
+        "to": "hook",
+        "trigger": "triage_committed_scam"
+      }
+    },
+    {
+      "seq": 9,
+      "type": "agent_turn",
+      "at_seconds": 79.177,
+      "call_sid": "CAscam_walks_from_greeting_into_baiting",
+      "payload": {
+        "text": "The Windows key. Which one is that, dear?",
+        "scripted": false,
+        "tactic": "read_back",
+        "phase": "hook",
+        "failure": null,
+        "filler": "sigh_soft.wav",
+        "character_delay_ms": 555,
+        "fumbled": false,
+        "first_sentence_ms": 0,
+        "stream_ms": 555,
+        "character_pause_ms": 555,
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "seq": 10,
+      "type": "caller_turn",
+      "at_seconds": 104.177,
+      "call_sid": "CAscam_walks_from_greeting_into_baiting",
+      "payload": {
+        "text": "Now type in this website so I can get remote access to fix it.",
+        "triage": "scam",
+        "triage_confidence": 0.98,
+        "scam_type": "tech_support",
+        "emergency": false,
+        "threat": false,
+        "signals": [
+          {
+            "pattern": "self-identified",
+            "weight": 0.15,
+            "toward": "legit",
+            "count": 1
+          },
+          {
+            "pattern": "\\byour (?:computer|pc|router|device) (?:is|has been) (?:infected|compromised|hacked)\\b",
+            "weight": 0.45,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bpress (?:the )?windows key\\b",
+            "weight": 0.45,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bremote (?:access|desktop|support)\\b",
+            "weight": 0.45,
+            "toward": "scam",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "seq": 11,
+      "type": "phase_changed",
+      "at_seconds": 104.177,
+      "call_sid": "CAscam_walks_from_greeting_into_baiting",
+      "payload": {
+        "from": "hook",
+        "to": "stall",
+        "trigger": "hook_set"
+      }
+    },
+    {
+      "seq": 12,
+      "type": "agent_turn",
+      "at_seconds": 106.335,
+      "call_sid": "CAscam_walks_from_greeting_into_baiting",
+      "payload": {
+        "text": "Oh, I see a picture of a flag. Is that it?",
+        "scripted": false,
+        "tactic": "repeat_request",
+        "phase": "stall",
+        "failure": null,
+        "filler": "sorry_sorry.wav",
+        "character_delay_ms": 2158,
+        "fumbled": false,
+        "first_sentence_ms": 0,
+        "stream_ms": 2158,
+        "character_pause_ms": 2158,
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "seq": 13,
+      "type": "caller_turn",
+      "at_seconds": 131.335,
+      "call_sid": "CAscam_walks_from_greeting_into_baiting",
+      "payload": {
+        "text": "Ma'am, is the computer on? Can you see the screen?",
+        "triage": "scam",
+        "triage_confidence": 0.98,
+        "scam_type": "tech_support",
+        "emergency": false,
+        "threat": false,
+        "signals": [
+          {
+            "pattern": "self-identified",
+            "weight": 0.15,
+            "toward": "legit",
+            "count": 1
+          },
+          {
+            "pattern": "\\byour (?:computer|pc|router|device) (?:is|has been) (?:infected|compromised|hacked)\\b",
+            "weight": 0.45,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bpress (?:the )?windows key\\b",
+            "weight": 0.45,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bremote (?:access|desktop|support)\\b",
+            "weight": 0.45,
+            "toward": "scam",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "seq": 14,
+      "type": "agent_turn",
+      "at_seconds": 133.343,
+      "call_sid": "CAscam_walks_from_greeting_into_baiting",
+      "payload": {
+        "text": "It's asking me something now. What does it say?",
+        "scripted": false,
+        "tactic": "fumble_data",
+        "phase": "stall",
+        "failure": null,
+        "filler": "right_ive_got_it.wav",
+        "character_delay_ms": 2008,
+        "fumbled": false,
+        "first_sentence_ms": 0,
+        "stream_ms": 2008,
+        "character_pause_ms": 2008,
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "seq": 15,
+      "type": "caller_turn",
+      "at_seconds": 158.343,
+      "call_sid": "CAscam_walks_from_greeting_into_baiting",
+      "payload": {
+        "text": "Please, just tell me what is on the screen right now.",
+        "triage": "scam",
+        "triage_confidence": 0.98,
+        "scam_type": "tech_support",
+        "emergency": false,
+        "threat": false,
+        "signals": [
+          {
+            "pattern": "self-identified",
+            "weight": 0.15,
+            "toward": "legit",
+            "count": 1
+          },
+          {
+            "pattern": "\\byour (?:computer|pc|router|device) (?:is|has been) (?:infected|compromised|hacked)\\b",
+            "weight": 0.45,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bpress (?:the )?windows key\\b",
+            "weight": 0.45,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bremote (?:access|desktop|support)\\b",
+            "weight": 0.45,
+            "toward": "scam",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "seq": 16,
+      "type": "agent_turn",
+      "at_seconds": 159.666,
+      "call_sid": "CAscam_walks_from_greeting_into_baiting",
+      "payload": {
+        "text": "Oh dear, the screen has gone dark.",
+        "scripted": false,
+        "tactic": "read_back",
+        "phase": "stall",
+        "failure": null,
+        "filler": "sorry_sorry.wav",
+        "character_delay_ms": 1323,
+        "fumbled": false,
+        "first_sentence_ms": 0,
+        "stream_ms": 1323,
+        "character_pause_ms": 1323,
+        "stop_reason": "end_turn"
+      }
+    }
+  ],
+  "transcript": [
+    {
+      "role": "assistant",
+      "scripted": true,
+      "content": "Hello?"
+    },
+    {
+      "role": "user",
+      "scripted": false,
+      "content": "Hello, I'm calling from Windows technical department."
+    },
+    {
+      "role": "assistant",
+      "scripted": false,
+      "content": "Hello? Who is this, please?"
+    },
+    {
+      "role": "user",
+      "scripted": false,
+      "content": "Your computer is infected and it is sending errors to our server."
+    },
+    {
+      "role": "assistant",
+      "scripted": false,
+      "content": "My computer? I don't think I have one of those."
+    },
+    {
+      "role": "user",
+      "scripted": false,
+      "content": "I need you to sit at your computer and press the Windows key."
+    },
+    {
+      "role": "assistant",
+      "scripted": false,
+      "content": "The Windows key. Which one is that, dear?"
+    },
+    {
+      "role": "user",
+      "scripted": false,
+      "content": "Now type in this website so I can get remote access to fix it."
+    },
+    {
+      "role": "assistant",
+      "scripted": false,
+      "content": "Oh, I see a picture of a flag. Is that it?"
+    },
+    {
+      "role": "user",
+      "scripted": false,
+      "content": "Ma'am, is the computer on? Can you see the screen?"
+    },
+    {
+      "role": "assistant",
+      "scripted": false,
+      "content": "It's asking me something now. What does it say?"
+    },
+    {
+      "role": "user",
+      "scripted": false,
+      "content": "Please, just tell me what is on the screen right now."
+    },
+    {
+      "role": "assistant",
+      "scripted": false,
+      "content": "Oh dear, the screen has gone dark."
+    }
+  ],
+  "steering": [
+    "[call state] You have just picked up the phone and do not yet know who this is. Answer briefly and plainly, the way anyone would. Do not perform a character, do not stall, do not volunteer anything about yourself. Ask who is calling and what they want.",
+    "[call state] You have just picked up the phone and do not yet know who this is. Answer briefly and plainly, the way anyone would. Do not perform a character, do not stall, do not volunteer anything about yourself. Ask who is calling and what they want.",
+    "[call state] Phase: hook.\nThey are running a scam and you are now in character. React the way this script wants you to react — frightened, delighted, worried — so they commit to the pitch. Do not stall yet; let them get invested.\nScript they appear to be running: tech_support.\nLean on this move for the next turn: repeat what they said back to them with one detail changed, and ask if that's right.\nNever say a card, bank, or identity number that would actually work — fumble instead.",
+    "[call state] Phase: stall.\nStall. Keep them believing they are close to succeeding.\nScript they appear to be running: tech_support.\nLean on this move for the next turn: ask them to say the whole thing again, from the top.\nNever say a card, bank, or identity number that would actually work — fumble instead.",
+    "[call state] Phase: stall.\nStall. Keep them believing they are close to succeeding.\nScript they appear to be running: tech_support.\nLean on this move for the next turn: try to give them what they asked for and fail at the last moment: lose your place, drop the pen, pick up the wrong card.\nNever say a card, bank, or identity number that would actually work — fumble instead.",
+    "[call state] Phase: stall.\nStall. Keep them believing they are close to succeeding.\nScript they appear to be running: tech_support.\nLean on this move for the next turn: repeat what they said back to them with one detail changed, and ask if that's right.\nNever say a card, bank, or identity number that would actually work — fumble instead."
+  ]
+}

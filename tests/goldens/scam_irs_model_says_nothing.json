@@ -1,0 +1,430 @@
+{
+  "events": [
+    {
+      "seq": 1,
+      "type": "call_opened",
+      "at_seconds": 0.0,
+      "call_sid": "CAscam_irs_model_says_nothing",
+      "payload": {
+        "persona": "harold",
+        "caller": "+19375559999",
+        "entry_path": "direct",
+        "phase": "stall",
+        "seed": 21,
+        "model": "claude-sonnet-5",
+        "effort": "low",
+        "max_tokens": 400
+      }
+    },
+    {
+      "seq": 2,
+      "type": "caller_turn",
+      "at_seconds": 25.0,
+      "call_sid": "CAscam_irs_model_says_nothing",
+      "payload": {
+        "text": "Hello ma'am, am I speaking with the account holder?",
+        "triage": "unclear",
+        "triage_confidence": 0.0,
+        "scam_type": "unknown",
+        "emergency": false,
+        "threat": false,
+        "signals": []
+      }
+    },
+    {
+      "seq": 3,
+      "type": "agent_turn",
+      "at_seconds": 25.506,
+      "call_sid": "CAscam_irs_model_says_nothing",
+      "payload": {
+        "text": "Sorry dear, what was that? I didn't catch it.",
+        "scripted": false,
+        "tactic": "tangent",
+        "phase": "stall",
+        "failure": null,
+        "filler": "throat_clear.wav",
+        "character_delay_ms": 506,
+        "fumbled": false,
+        "first_sentence_ms": 0,
+        "stream_ms": 506,
+        "character_pause_ms": 506,
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "seq": 4,
+      "type": "caller_turn",
+      "at_seconds": 50.506,
+      "call_sid": "CAscam_irs_model_says_nothing",
+      "payload": {
+        "text": "This is Officer Reed calling from the tax office. There is an arrest warrant for your arrest over unpaid back taxes.",
+        "triage": "scam",
+        "triage_confidence": 0.45,
+        "scam_type": "irs_tax",
+        "emergency": false,
+        "threat": false,
+        "signals": [
+          {
+            "pattern": "\\barrest warrant\\b",
+            "weight": 0.45,
+            "toward": "scam",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "seq": 5,
+      "type": "agent_turn",
+      "at_seconds": 50.506,
+      "call_sid": "CAscam_irs_model_says_nothing",
+      "payload": {
+        "text": "Wait now, the pen's gone and stopped writing. Just a moment.",
+        "scripted": false,
+        "tactic": "hold_on",
+        "phase": "stall",
+        "failure": null,
+        "filler": "throat_clear.wav",
+        "character_delay_ms": 1072,
+        "fumbled": true,
+        "first_sentence_ms": null,
+        "stream_ms": 0,
+        "character_pause_ms": 0,
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "seq": 6,
+      "type": "hold",
+      "at_seconds": 90.506,
+      "call_sid": "CAscam_irs_model_says_nothing",
+      "payload": {
+        "seconds": 40,
+        "clip": "footsteps_away.wav"
+      }
+    },
+    {
+      "seq": 7,
+      "type": "caller_turn",
+      "at_seconds": 115.506,
+      "call_sid": "CAscam_irs_model_says_nothing",
+      "payload": {
+        "text": "Do not hang up. Stay on the line or the officers will be dispatched.",
+        "triage": "scam",
+        "triage_confidence": 0.8500000000000001,
+        "scam_type": "irs_tax",
+        "emergency": false,
+        "threat": false,
+        "signals": [
+          {
+            "pattern": "\\barrest warrant\\b",
+            "weight": 0.45,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bdo not hang up\\b",
+            "weight": 0.2,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bstay on the line\\b",
+            "weight": 0.2,
+            "toward": "scam",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "seq": 8,
+      "type": "agent_turn",
+      "at_seconds": 116.508,
+      "call_sid": "CAscam_irs_model_says_nothing",
+      "payload": {
+        "text": "Say that again for me? The telly's on.",
+        "scripted": false,
+        "tactic": "tech_illiteracy",
+        "phase": "stall",
+        "failure": null,
+        "filler": "hold_on_son.wav",
+        "character_delay_ms": 1002,
+        "fumbled": false,
+        "first_sentence_ms": 0,
+        "stream_ms": 1002,
+        "character_pause_ms": 1002,
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "seq": 9,
+      "type": "hold",
+      "at_seconds": 163.508,
+      "call_sid": "CAscam_irs_model_says_nothing",
+      "payload": {
+        "seconds": 47,
+        "clip": "footsteps_away.wav"
+      }
+    },
+    {
+      "seq": 10,
+      "type": "caller_turn",
+      "at_seconds": 188.508,
+      "call_sid": "CAscam_irs_model_says_nothing",
+      "payload": {
+        "text": "The amount owed is two thousand four hundred dollars. Can you pay today?",
+        "triage": "scam",
+        "triage_confidence": 0.8500000000000001,
+        "scam_type": "irs_tax",
+        "emergency": false,
+        "threat": false,
+        "signals": [
+          {
+            "pattern": "\\barrest warrant\\b",
+            "weight": 0.45,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bdo not hang up\\b",
+            "weight": 0.2,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bstay on the line\\b",
+            "weight": 0.2,
+            "toward": "scam",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "seq": 11,
+      "type": "agent_turn",
+      "at_seconds": 189.295,
+      "call_sid": "CAscam_irs_model_says_nothing",
+      "payload": {
+        "text": "Two thousand what, dear?",
+        "scripted": false,
+        "tactic": "mishear",
+        "phase": "stall",
+        "failure": null,
+        "filler": "hold_on_son.wav",
+        "character_delay_ms": 787,
+        "fumbled": false,
+        "first_sentence_ms": 0,
+        "stream_ms": 787,
+        "character_pause_ms": 787,
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "seq": 12,
+      "type": "caller_turn",
+      "at_seconds": 214.295,
+      "call_sid": "CAscam_irs_model_says_nothing",
+      "payload": {
+        "text": "You will need to purchase gift cards. Do you have a car?",
+        "triage": "scam",
+        "triage_confidence": 0.98,
+        "scam_type": "gift_card",
+        "emergency": false,
+        "threat": false,
+        "signals": [
+          {
+            "pattern": "\\barrest warrant\\b",
+            "weight": 0.45,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bdo not hang up\\b",
+            "weight": 0.2,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bstay on the line\\b",
+            "weight": 0.2,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bgift cards?\\b",
+            "weight": 0.5,
+            "toward": "scam",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "seq": 13,
+      "type": "agent_turn",
+      "at_seconds": 214.845,
+      "call_sid": "CAscam_irs_model_says_nothing",
+      "payload": {
+        "text": "I'll have to find my chequebook.",
+        "scripted": false,
+        "tactic": "hold_on",
+        "phase": "stall",
+        "failure": null,
+        "filler": "hold_on_son.wav",
+        "character_delay_ms": 550,
+        "fumbled": false,
+        "first_sentence_ms": 0,
+        "stream_ms": 550,
+        "character_pause_ms": 550,
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "seq": 14,
+      "type": "hold",
+      "at_seconds": 271.845,
+      "call_sid": "CAscam_irs_model_says_nothing",
+      "payload": {
+        "seconds": 57,
+        "clip": "door_and_dog.wav"
+      }
+    },
+    {
+      "seq": 15,
+      "type": "caller_turn",
+      "at_seconds": 296.845,
+      "call_sid": "CAscam_irs_model_says_nothing",
+      "payload": {
+        "text": "Ma'am, are you listening to me? This is a federal matter.",
+        "triage": "scam",
+        "triage_confidence": 0.98,
+        "scam_type": "gift_card",
+        "emergency": false,
+        "threat": false,
+        "signals": [
+          {
+            "pattern": "\\barrest warrant\\b",
+            "weight": 0.45,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bdo not hang up\\b",
+            "weight": 0.2,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bstay on the line\\b",
+            "weight": 0.2,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bgift cards?\\b",
+            "weight": 0.5,
+            "toward": "scam",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "seq": 16,
+      "type": "agent_turn",
+      "at_seconds": 297.401,
+      "call_sid": "CAscam_irs_model_says_nothing",
+      "payload": {
+        "text": "Is that the one with the blue cover?",
+        "scripted": false,
+        "tactic": "eager_nonconvergence",
+        "phase": "stall",
+        "failure": null,
+        "filler": "throat_clear.wav",
+        "character_delay_ms": 556,
+        "fumbled": false,
+        "first_sentence_ms": 0,
+        "stream_ms": 556,
+        "character_pause_ms": 556,
+        "stop_reason": "end_turn"
+      }
+    }
+  ],
+  "transcript": [
+    {
+      "role": "assistant",
+      "scripted": true,
+      "content": "Hello?"
+    },
+    {
+      "role": "user",
+      "scripted": false,
+      "content": "Hello ma'am, am I speaking with the account holder?"
+    },
+    {
+      "role": "assistant",
+      "scripted": false,
+      "content": "Sorry dear, what was that? I didn't catch it."
+    },
+    {
+      "role": "user",
+      "scripted": false,
+      "content": "This is Officer Reed calling from the tax office. There is an arrest warrant for your arrest over unpaid back taxes."
+    },
+    {
+      "role": "assistant",
+      "scripted": false,
+      "content": "Wait now, the pen's gone and stopped writing. Just a moment."
+    },
+    {
+      "role": "user",
+      "scripted": false,
+      "content": "Do not hang up. Stay on the line or the officers will be dispatched."
+    },
+    {
+      "role": "assistant",
+      "scripted": false,
+      "content": "Say that again for me? The telly's on."
+    },
+    {
+      "role": "user",
+      "scripted": false,
+      "content": "The amount owed is two thousand four hundred dollars. Can you pay today?"
+    },
+    {
+      "role": "assistant",
+      "scripted": false,
+      "content": "Two thousand what, dear?"
+    },
+    {
+      "role": "user",
+      "scripted": false,
+      "content": "You will need to purchase gift cards. Do you have a car?"
+    },
+    {
+      "role": "assistant",
+      "scripted": false,
+      "content": "I'll have to find my chequebook."
+    },
+    {
+      "role": "user",
+      "scripted": false,
+      "content": "Ma'am, are you listening to me? This is a federal matter."
+    },
+    {
+      "role": "assistant",
+      "scripted": false,
+      "content": "Is that the one with the blue cover?"
+    }
+  ],
+  "steering": [
+    "[call state] Phase: stall.\nStall. Keep them believing they are close to succeeding.\nLean on this move for the next turn: let their question remind you of a story, and tell the story instead.\nNever say a card, bank, or identity number that would actually work — fumble instead.",
+    "[call state] Phase: stall.\nStall. Keep them believing they are close to succeeding.\nScript they appear to be running: irs_tax.\nLean on this move for the next turn: say you need to put the phone down for a moment, and do.\nNever say a card, bank, or identity number that would actually work — fumble instead.",
+    "[call state] Phase: stall.\nStall. Keep them believing they are close to succeeding.\nScript they appear to be running: irs_tax.\nLean on this move for the next turn: be unable to find the button, the screen, or the window they are describing.\nNever say a card, bank, or identity number that would actually work — fumble instead.",
+    "[call state] Phase: stall.\nStall. Keep them believing they are close to succeeding.\nScript they appear to be running: irs_tax.\nLean on this move for the next turn: mishear one important word — an amount, a name, an agency — and react to the wrong one.\nNever say a card, bank, or identity number that would actually work — fumble instead.",
+    "[call state] Phase: stall.\nStall. Keep them believing they are close to succeeding.\nScript they appear to be running: gift_card.\nLean on this move for the next turn: say you need to put the phone down for a moment, and do.\nNever say a card, bank, or identity number that would actually work — fumble instead.",
+    "[call state] Phase: stall.\nStall. Keep them believing they are close to succeeding.\nScript they appear to be running: gift_card.\nLean on this move for the next turn: agree enthusiastically, then ask a question that puts them back at the beginning.\nNever say a card, bank, or identity number that would actually work — fumble instead."
+  ]
+}

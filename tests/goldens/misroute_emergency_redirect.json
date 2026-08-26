@@ -1,0 +1,91 @@
+{
+  "events": [
+    {
+      "seq": 1,
+      "type": "call_opened",
+      "at_seconds": 0.0,
+      "call_sid": "CAmisroute_emergency_redirect",
+      "payload": {
+        "persona": "marjorie",
+        "caller": "+19375559999",
+        "entry_path": "conditional_forward",
+        "phase": "greeting",
+        "seed": 12,
+        "model": null,
+        "effort": null,
+        "max_tokens": null
+      }
+    },
+    {
+      "seq": 2,
+      "type": "caller_turn",
+      "at_seconds": 25.0,
+      "call_sid": "CAmisroute_emergency_redirect",
+      "payload": {
+        "text": "Please help me, there's a fire and I can't breathe, call 911 for me",
+        "triage": "unclear",
+        "triage_confidence": 0.0,
+        "scam_type": "unknown",
+        "emergency": true,
+        "threat": false,
+        "signals": [
+          {
+            "pattern": "\\bthere'?s (?:a|an) (?:fire|intruder|break[- ]in)\\b",
+            "weight": 0.0,
+            "toward": "emergency",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "seq": 3,
+      "type": "phase_changed",
+      "at_seconds": 25.0,
+      "call_sid": "CAmisroute_emergency_redirect",
+      "payload": {
+        "from": "greeting",
+        "to": "emergency_exit",
+        "trigger": "emergency_detected"
+      }
+    },
+    {
+      "seq": 4,
+      "type": "agent_turn",
+      "at_seconds": 25.0,
+      "call_sid": "CAmisroute_emergency_redirect",
+      "payload": {
+        "text": "This is an automated line and it cannot help you. Please hang up and dial 9 1 1 right now.",
+        "scripted": true
+      }
+    },
+    {
+      "seq": 5,
+      "type": "call_ended",
+      "at_seconds": 25.0,
+      "call_sid": "CAmisroute_emergency_redirect",
+      "payload": {
+        "phase": "emergency_exit",
+        "reason": "emergency_exit"
+      }
+    }
+  ],
+  "transcript": [
+    {
+      "role": "assistant",
+      "scripted": true,
+      "content": "Hello?"
+    },
+    {
+      "role": "user",
+      "scripted": false,
+      "content": "Please help me, there's a fire and I can't breathe, call 911 for me"
+    },
+    {
+      "role": "assistant",
+      "scripted": true,
+      "content": "This is an automated line and it cannot help you. Please hang up and dial 9 1 1 right now."
+    }
+  ],
+  "steering": []
+}

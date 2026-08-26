@@ -82,6 +82,22 @@ are fake. `--dry` skips the model entirely, `--script <name>` plays a canned cal
 `--all-scripts` is the release gate. Every run prints its rng seed; `--seed <n>`
 reproduces a dry run draw-for-draw.
 
+### Golden calls
+
+A handful of calls are pinned end to end — their event stream, transcript, and the
+steering the model was asked under — and CI replays each one and diffs it byte for
+byte. The manifests live in [`ssscammers/simscammer/golden.py`](ssscammers/simscammer/golden.py)
+and the recorded streams in `tests/goldens/`.
+
+```bash
+python scripts/regenerate_goldens.py
+```
+
+Run that only when a change to the stream is *intended*, and read the diff before
+committing it: a golden is the record of what the system did, so regenerating one to
+make a test pass is how a regression becomes the baseline. It needs no API key — the
+model side of each golden is a recording.
+
 ### Run the agent
 
 ```bash

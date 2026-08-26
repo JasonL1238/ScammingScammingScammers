@@ -1201,3 +1201,104 @@ paths, release within two turns."
   `ruff check .` clean. The round trip is now a test rather than a claim: a call
   driven through the deep seam and the same recording driven through the fast
   one emit **identical event streams**, including the truncation labels.
+- **Green on main:** run
+  [33004064111](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/33004064111)
+  (commit `f94c00a`).
+
+### T2.8 — Golden manifests and the byte-identical replay gate
+
+- **Scope:** `ssscammers/simscammer/golden.py` (manifest, runner, serializer,
+  and a corpus of six), `session.py` (the *one* call driver, extracted),
+  `scripts/regenerate_goldens.py`, `tests/goldens/*.json`, and
+  `tests/test_goldens.py`. A golden pins the event stream, the transcript, and
+  the steering the model was asked under.
+- **Rule 1 review** (two adversaries, 28 mutations between them; **13 survived
+  the first draft** — the gate was, in A's words, "partly real"). Every one of
+  the following was found by executed mutation, not inspection:
+  - *A-F1 (the gate's own red-proof was fake):* the mutation tests
+    hand-rolled a second serializer without `ensure_ascii=False`, so an em dash
+    in the disclosure produced a diff **whether or not the mutation was
+    applied** — A proved it by deleting the mutations and watching the tests
+    pass. **Fixed:** one `reserialize` helper, plus a control test asserting an
+    unmutated replay produces *no* diff, so a serializer mismatch can never
+    again masquerade as detection.
+  - *A-F2 (the headline golden pinned nothing it claimed):* the card was split
+    mid-*sentence*, and the splitter rejoins deltas before the filter sees
+    them — so the whole 16 digits arrived in one sentence and a per-sentence
+    check would have caught it identically. A proved it: reopening the G-4
+    cumulative-filter hole left all 30 tests green. **Fixed** by splitting at a
+    sentence boundary; the mutation now fails the gate.
+  - *A-F3 ≡ B-F2 (G-16 was unobservable, and there were two drivers):* the
+    runner advanced the whole pause, *then* marked audio finished, *then*
+    ticked — so `_line_busy_until` was never the deciding term in 195
+    evaluations, and deleting G-16 outright left the corpus green. The root
+    cause was structural: the golden runner and `textloop.Session` were two
+    drivers of one `Conversation` that already disagreed, and B measured the
+    divergence (a `hold` at 111.6s vs 70.5s for the same manifest) — with the
+    shipped harness being the one that was *wrong* relative to production,
+    which drains lazily and sleeps per action. **Fixed by deletion:** one
+    `Session`, used by both, advancing the clock inside the drain and running
+    the timer *through* pauses at the production 1 Hz cadence. Removing G-16
+    now fails four tests. B's prediction held exactly — the textloop gate stays
+    exit 0, with one line changing (`phase=hook` → `phase=stall`), because the
+    harness had been misreporting that turn.
+  - *A-F4 ≡ B-F4 (steering pinned by nothing):* `state_note` appears in no
+    event payload, and every golden left it `UNRECORDED`, so the state notes
+    could be rewritten wholesale and the gate stayed green — `strict=True`
+    would not have helped. **Fixed** by capturing the steering into the golden
+    artifact (`ReplayBrain.seen_state_notes`) rather than into every event
+    payload, where it would be bulky and, once persisted, permanent. Rewriting
+    a note template now fails four tests.
+  - *A-F5 (the transcript, which the exit criterion names, was discarded):*
+    silencing the greeting entirely — the persona answering every call with
+    nothing — left the corpus green. **Fixed:** the golden carries the
+    transcript with provenance; that mutation now fails seven tests.
+  - *B-F1 (the pack pin was vacuous):* every recording inherited
+    `pack_version` from the live tree, so the guard compared a value to
+    itself — B set `PACK_VERSION = "v2"` and all 30 tests passed. **Fixed** by
+    pinning the literal on every manifest, with a monkeypatched regression test.
+  - *A-F6 ≡ B-F3 (no golden walked the state machine):* three of five
+    teleported to `STALL`. **Fixed** with a walk-from-greeting golden; the
+    triage commit bar (0.6 → 0.95) now fails the gate.
+  - *A-F9 (unpinned paths):* added a golden where the model returns nothing, so
+    the fumble draw that covers silence is pinned.
+  - *B-F5:* `sort_keys=True` bought no determinism (payloads are already
+    insertion-ordered) and pushed `seq`/`type` *after* the payload they
+    identify — the opposite of the reviewability rationale T2.7 adjudicated for
+    the sibling serializer. **Removed.**
+  - *Refuted in writing, with measurement:* no golden pins the probation
+    *window*, and none can. No authored opener reaches the 0.6 commit bar alone
+    (strongest is 0.50), so commitment always waits for a second turn at t=50s,
+    already past the 30s window; probation binds only a caller who convicts
+    himself in one breath, and inventing that opener to kill a mutation would
+    be a fixture rather than a call. The probation → hard-commit behaviour is
+    pinned directly by `tests/test_call_scripts.py`. The reasoning is recorded
+    in the manifest itself so the next reader does not re-derive it.
+  - *Adjudicated (B's headline question):* manifest-driven replay is correct,
+    not a weaker substitute for log-driven replay — T2.7 proved the event log
+    is not a sufficient replay source (it holds post-filter speech; the
+    recording holds raw deltas), and T2.3 established that quiet ticks emit
+    nothing by design. The roadmap's "from a recorded event log" is loose
+    phrasing against a design this project converged on with reasons.
+  - *Verified by B and worth recording:* the corpus is byte-identical under
+    Python 3.11 and 3.13, hash-seed independent; the goldens contain no PII
+    (the card is blocked and never spoken, and it is not either persona's
+    fiction card); `tests/` is excluded from the Docker image, so goldens
+    correctly do not ship.
+- **Escalation — open question for the owner.** The exit criterion says *"a
+  **recorded** call replays byte-identically"*. These six goldens are
+  **authored**, not captured: there is no recorder, so the manifest expresses
+  per-turn timing as a rule (`seconds_per_turn`) rather than as data, and a
+  real call with uneven gaps — the shape that reaches dead air naturally —
+  cannot be expressed. `DailyLedger`'s civil date is likewise not an input,
+  refuted in writing because the ledger lives on the admission path and a
+  conversation-level replay never touches it. **Recommendation:** amend Phase
+  2's wording to "a synthesized call", and schedule the recorder against Phase
+  5, where persisted rows make capture necessary and give it a real source.
+  Escalated rather than decided here because it changes the roadmap's own exit
+  criterion.
+- **Verification (final tree):** 950 passed / 16 skipped; textloop dry exit 0;
+  `ruff check .` clean. Mutation re-run under the cache-clearing procedure —
+  of the five that survived the first draft and were retested: G-4 hole → 1
+  failure, G-16 removed → 4, steering rewritten → 4, greeting silenced → 7,
+  commit bar raised → 1; probation window → still green, refuted above.

@@ -309,6 +309,15 @@ class ReplayBrain:
     that deliberately drive a recording through different inputs."""
 
     last_stop_reason: str | None = field(init=False, default=None)
+
+    seen_state_notes: list[str | None] = field(init=False, default_factory=list)
+    """The steering each replayed turn was asked under, in order.
+
+    The capture half of a recorder: a golden can pin the notes a call produced
+    without the steering having to ride in every event payload, which is where
+    it would be both bulky and, once persisted, permanent.
+    """
+
     _cursor: _Cursor = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -357,6 +366,7 @@ class ReplayBrain:
         if not ClaudeBrain.build_messages(history, state_note):
             return
 
+        self.seen_state_notes.append(state_note)
         turn = self.recording.turns[self._cursor.take("model turn")]
         if self.strict:
             _check_turn(

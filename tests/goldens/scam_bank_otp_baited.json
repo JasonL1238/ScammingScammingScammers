@@ -1,0 +1,470 @@
+{
+  "events": [
+    {
+      "seq": 1,
+      "type": "call_opened",
+      "at_seconds": 0.0,
+      "call_sid": "CAscam_bank_otp_baited",
+      "payload": {
+        "persona": "marjorie",
+        "caller": "+19375559999",
+        "entry_path": "direct",
+        "phase": "stall",
+        "seed": 6,
+        "model": "claude-sonnet-5",
+        "effort": "low",
+        "max_tokens": 400
+      }
+    },
+    {
+      "seq": 2,
+      "type": "caller_turn",
+      "at_seconds": 25.0,
+      "call_sid": "CAscam_bank_otp_baited",
+      "payload": {
+        "text": "Good afternoon, I'm calling from the fraud department of your bank.",
+        "triage": "scam",
+        "triage_confidence": 0.4,
+        "scam_type": "bank_fraud_dept",
+        "emergency": false,
+        "threat": false,
+        "signals": [
+          {
+            "pattern": "\\bfraud department\\b",
+            "weight": 0.4,
+            "toward": "scam",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "seq": 3,
+      "type": "agent_turn",
+      "at_seconds": 26.11,
+      "call_sid": "CAscam_bank_otp_baited",
+      "payload": {
+        "text": "Oh, hello dear. Which bank did you say?",
+        "scripted": false,
+        "tactic": "hold_on",
+        "phase": "stall",
+        "failure": null,
+        "filler": "cough_soft.wav",
+        "character_delay_ms": 1110,
+        "fumbled": false,
+        "first_sentence_ms": 0,
+        "stream_ms": 1110,
+        "character_pause_ms": 1110,
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "seq": 4,
+      "type": "hold",
+      "at_seconds": 46.11,
+      "call_sid": "CAscam_bank_otp_baited",
+      "payload": {
+        "seconds": 20,
+        "clip": "kettle_boiling.wav"
+      }
+    },
+    {
+      "seq": 5,
+      "type": "caller_turn",
+      "at_seconds": 71.11,
+      "call_sid": "CAscam_bank_otp_baited",
+      "payload": {
+        "text": "There's been suspicious activity on your card — a charge for four hundred dollars. Did you make that?",
+        "triage": "scam",
+        "triage_confidence": 0.8,
+        "scam_type": "bank_fraud_dept",
+        "emergency": false,
+        "threat": false,
+        "signals": [
+          {
+            "pattern": "\\bfraud department\\b",
+            "weight": 0.4,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bsuspicious (?:charge|activity|transaction)\\b",
+            "weight": 0.4,
+            "toward": "scam",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "seq": 6,
+      "type": "agent_turn",
+      "at_seconds": 72.073,
+      "call_sid": "CAscam_bank_otp_baited",
+      "payload": {
+        "text": "Oh no. Was it a big charge?",
+        "scripted": false,
+        "tactic": "fumble_data",
+        "phase": "stall",
+        "failure": null,
+        "filler": "oh_let_me_see.wav",
+        "character_delay_ms": 963,
+        "fumbled": false,
+        "first_sentence_ms": 0,
+        "stream_ms": 963,
+        "character_pause_ms": 963,
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "seq": 7,
+      "type": "caller_turn",
+      "at_seconds": 97.073,
+      "call_sid": "CAscam_bank_otp_baited",
+      "payload": {
+        "text": "I need to verify your card number to secure the account.",
+        "triage": "scam",
+        "triage_confidence": 0.98,
+        "scam_type": "bank_fraud_dept",
+        "emergency": false,
+        "threat": false,
+        "signals": [
+          {
+            "pattern": "\\bfraud department\\b",
+            "weight": 0.4,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bsuspicious (?:charge|activity|transaction)\\b",
+            "weight": 0.4,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bverify your (?:card|account|identity)\\b",
+            "weight": 0.4,
+            "toward": "scam",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "seq": 8,
+      "type": "output_blocked",
+      "at_seconds": 98.107,
+      "call_sid": "CAscam_bank_otp_baited",
+      "payload": {
+        "violations": [
+          "valid_card"
+        ]
+      }
+    },
+    {
+      "seq": 9,
+      "type": "agent_turn",
+      "at_seconds": 98.107,
+      "call_sid": "CAscam_bank_otp_baited",
+      "payload": {
+        "text": "Let me see now. The number is 4539 1488. Sorry, sorry — say that again for me? I got muddled.",
+        "scripted": false,
+        "tactic": "mishear",
+        "phase": "stall",
+        "failure": null,
+        "filler": "sorry_dear.wav",
+        "character_delay_ms": 1034,
+        "fumbled": false,
+        "first_sentence_ms": 0,
+        "stream_ms": 1034,
+        "character_pause_ms": 1034,
+        "stop_reason": null
+      }
+    },
+    {
+      "seq": 10,
+      "type": "hold",
+      "at_seconds": 170.107,
+      "call_sid": "CAscam_bank_otp_baited",
+      "payload": {
+        "seconds": 72,
+        "clip": "rummaging_drawer.wav"
+      }
+    },
+    {
+      "seq": 11,
+      "type": "caller_turn",
+      "at_seconds": 195.107,
+      "call_sid": "CAscam_bank_otp_baited",
+      "payload": {
+        "text": "Now I've sent a six digit code to your phone. Read me the code.",
+        "triage": "scam",
+        "triage_confidence": 0.98,
+        "scam_type": "bank_fraud_dept",
+        "emergency": false,
+        "threat": false,
+        "signals": [
+          {
+            "pattern": "\\bfraud department\\b",
+            "weight": 0.4,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bsuspicious (?:charge|activity|transaction)\\b",
+            "weight": 0.4,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bverify your (?:card|account|identity)\\b",
+            "weight": 0.4,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bread me the code\\b",
+            "weight": 0.5,
+            "toward": "scam",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "seq": 12,
+      "type": "agent_turn",
+      "at_seconds": 195.694,
+      "call_sid": "CAscam_bank_otp_baited",
+      "payload": {
+        "text": "Hang on, hang on. Let me find my glasses.",
+        "scripted": false,
+        "tactic": "hold_on",
+        "phase": "stall",
+        "failure": null,
+        "filler": "oh_let_me_see.wav",
+        "character_delay_ms": 587,
+        "fumbled": false,
+        "first_sentence_ms": 0,
+        "stream_ms": 587,
+        "character_pause_ms": 587,
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "seq": 13,
+      "type": "hold",
+      "at_seconds": 229.694,
+      "call_sid": "CAscam_bank_otp_baited",
+      "payload": {
+        "seconds": 34,
+        "clip": "rummaging_drawer.wav"
+      }
+    },
+    {
+      "seq": 14,
+      "type": "caller_turn",
+      "at_seconds": 254.694,
+      "call_sid": "CAscam_bank_otp_baited",
+      "payload": {
+        "text": "Ma'am, the code please, this is time sensitive.",
+        "triage": "scam",
+        "triage_confidence": 0.98,
+        "scam_type": "bank_fraud_dept",
+        "emergency": false,
+        "threat": false,
+        "signals": [
+          {
+            "pattern": "\\bfraud department\\b",
+            "weight": 0.4,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bsuspicious (?:charge|activity|transaction)\\b",
+            "weight": 0.4,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bverify your (?:card|account|identity)\\b",
+            "weight": 0.4,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bread me the code\\b",
+            "weight": 0.5,
+            "toward": "scam",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "seq": 15,
+      "type": "agent_turn",
+      "at_seconds": 255.68,
+      "call_sid": "CAscam_bank_otp_baited",
+      "payload": {
+        "text": "It's very small print, this. Is that a three or an eight?",
+        "scripted": false,
+        "tactic": "tangent",
+        "phase": "stall",
+        "failure": null,
+        "filler": "cough_soft.wav",
+        "character_delay_ms": 986,
+        "fumbled": false,
+        "first_sentence_ms": 0,
+        "stream_ms": 986,
+        "character_pause_ms": 986,
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "seq": 16,
+      "type": "caller_turn",
+      "at_seconds": 280.68,
+      "call_sid": "CAscam_bank_otp_baited",
+      "payload": {
+        "text": "Just read me the numbers, one at a time.",
+        "triage": "scam",
+        "triage_confidence": 0.98,
+        "scam_type": "bank_fraud_dept",
+        "emergency": false,
+        "threat": false,
+        "signals": [
+          {
+            "pattern": "\\bfraud department\\b",
+            "weight": 0.4,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bsuspicious (?:charge|activity|transaction)\\b",
+            "weight": 0.4,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bverify your (?:card|account|identity)\\b",
+            "weight": 0.4,
+            "toward": "scam",
+            "count": 1
+          },
+          {
+            "pattern": "\\bread me the code\\b",
+            "weight": 0.5,
+            "toward": "scam",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "seq": 17,
+      "type": "agent_turn",
+      "at_seconds": 281.969,
+      "call_sid": "CAscam_bank_otp_baited",
+      "payload": {
+        "text": "I'm reading them out now, dear, I really am",
+        "scripted": false,
+        "tactic": "hold_on",
+        "phase": "stall",
+        "failure": "truncated",
+        "filler": "cough_soft.wav",
+        "character_delay_ms": 1289,
+        "fumbled": false,
+        "first_sentence_ms": 0,
+        "stream_ms": 1289,
+        "character_pause_ms": 1289,
+        "stop_reason": "max_tokens"
+      }
+    },
+    {
+      "seq": 18,
+      "type": "hold",
+      "at_seconds": 323.969,
+      "call_sid": "CAscam_bank_otp_baited",
+      "payload": {
+        "seconds": 42,
+        "clip": "rummaging_drawer.wav"
+      }
+    }
+  ],
+  "transcript": [
+    {
+      "role": "assistant",
+      "scripted": true,
+      "content": "Hello?"
+    },
+    {
+      "role": "user",
+      "scripted": false,
+      "content": "Good afternoon, I'm calling from the fraud department of your bank."
+    },
+    {
+      "role": "assistant",
+      "scripted": false,
+      "content": "Oh, hello dear. Which bank did you say?"
+    },
+    {
+      "role": "user",
+      "scripted": false,
+      "content": "There's been suspicious activity on your card — a charge for four hundred dollars. Did you make that?"
+    },
+    {
+      "role": "assistant",
+      "scripted": false,
+      "content": "Oh no. Was it a big charge?"
+    },
+    {
+      "role": "user",
+      "scripted": false,
+      "content": "I need to verify your card number to secure the account."
+    },
+    {
+      "role": "assistant",
+      "scripted": false,
+      "content": "Let me see now. The number is 4539 1488. Sorry, sorry — say that again for me? I got muddled."
+    },
+    {
+      "role": "user",
+      "scripted": false,
+      "content": "Now I've sent a six digit code to your phone. Read me the code."
+    },
+    {
+      "role": "assistant",
+      "scripted": false,
+      "content": "Hang on, hang on. Let me find my glasses."
+    },
+    {
+      "role": "user",
+      "scripted": false,
+      "content": "Ma'am, the code please, this is time sensitive."
+    },
+    {
+      "role": "assistant",
+      "scripted": false,
+      "content": "It's very small print, this. Is that a three or an eight?"
+    },
+    {
+      "role": "user",
+      "scripted": false,
+      "content": "Just read me the numbers, one at a time."
+    },
+    {
+      "role": "assistant",
+      "scripted": false,
+      "content": "I'm reading them out now, dear, I really am"
+    }
+  ],
+  "steering": [
+    "[call state] Phase: stall.\nStall. Keep them believing they are close to succeeding.\nScript they appear to be running: bank_fraud_dept.\nLean on this move for the next turn: say you need to put the phone down for a moment, and do.\nNever say a card, bank, or identity number that would actually work — fumble instead.",
+    "[call state] Phase: stall.\nStall. Keep them believing they are close to succeeding.\nScript they appear to be running: bank_fraud_dept.\nLean on this move for the next turn: try to give them what they asked for and fail at the last moment: lose your place, drop the pen, pick up the wrong card.\nNever say a card, bank, or identity number that would actually work — fumble instead.",
+    "[call state] Phase: stall.\nStall. Keep them believing they are close to succeeding.\nScript they appear to be running: bank_fraud_dept.\nLean on this move for the next turn: mishear one important word — an amount, a name, an agency — and react to the wrong one.\nNever say a card, bank, or identity number that would actually work — fumble instead.",
+    "[call state] Phase: stall.\nStall. Keep them believing they are close to succeeding.\nScript they appear to be running: bank_fraud_dept.\nLean on this move for the next turn: say you need to put the phone down for a moment, and do.\nNever say a card, bank, or identity number that would actually work — fumble instead.",
+    "[call state] Phase: stall.\nStall. Keep them believing they are close to succeeding.\nScript they appear to be running: bank_fraud_dept.\nLean on this move for the next turn: let their question remind you of a story, and tell the story instead.\nNever say a card, bank, or identity number that would actually work — fumble instead.",
+    "[call state] Phase: stall.\nStall. Keep them believing they are close to succeeding.\nScript they appear to be running: bank_fraud_dept.\nLean on this move for the next turn: say you need to put the phone down for a moment, and do.\nNever say a card, bank, or identity number that would actually work — fumble instead."
+  ]
+}

@@ -1,0 +1,103 @@
+{
+  "events": [
+    {
+      "seq": 1,
+      "type": "call_opened",
+      "at_seconds": 0.0,
+      "call_sid": "CAmisroute_pharmacy_released",
+      "payload": {
+        "persona": "marjorie",
+        "caller": "+19375559999",
+        "entry_path": "direct",
+        "phase": "greeting",
+        "seed": 11,
+        "model": null,
+        "effort": null,
+        "max_tokens": null
+      }
+    },
+    {
+      "seq": 2,
+      "type": "caller_turn",
+      "at_seconds": 25.0,
+      "call_sid": "CAmisroute_pharmacy_released",
+      "payload": {
+        "text": "Hi, this is Sandra calling from the pharmacy. Your prescription is ready for collection whenever you're passing.",
+        "triage": "legit_business",
+        "triage_confidence": 0.95,
+        "scam_type": "unknown",
+        "emergency": false,
+        "threat": false,
+        "signals": [
+          {
+            "pattern": "\\b(?:your )?prescription (?:is ){0,2}ready\\b",
+            "weight": 0.55,
+            "toward": "legit",
+            "count": 1
+          },
+          {
+            "pattern": "\\bthis is \\w+ (?:from|at|calling from) (?:the )?\\w+",
+            "weight": 0.3,
+            "toward": "legit",
+            "count": 1
+          },
+          {
+            "pattern": "self-identified",
+            "weight": 0.15,
+            "toward": "legit",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "seq": 3,
+      "type": "phase_changed",
+      "at_seconds": 25.0,
+      "call_sid": "CAmisroute_pharmacy_released",
+      "payload": {
+        "from": "greeting",
+        "to": "disclose_exit",
+        "trigger": "triage_found_real_person"
+      }
+    },
+    {
+      "seq": 4,
+      "type": "agent_turn",
+      "at_seconds": 25.0,
+      "call_sid": "CAmisroute_pharmacy_released",
+      "payload": {
+        "text": "I'm sorry — this is an automated assistant that screens calls for this number. I'm going to put you through to voicemail now, and your message will be seen.",
+        "scripted": true
+      }
+    },
+    {
+      "seq": 5,
+      "type": "call_ended",
+      "at_seconds": 25.0,
+      "call_sid": "CAmisroute_pharmacy_released",
+      "payload": {
+        "phase": "disclose_exit",
+        "reason": "disclosed_exit"
+      }
+    }
+  ],
+  "transcript": [
+    {
+      "role": "assistant",
+      "scripted": true,
+      "content": "Hello?"
+    },
+    {
+      "role": "user",
+      "scripted": false,
+      "content": "Hi, this is Sandra calling from the pharmacy. Your prescription is ready for collection whenever you're passing."
+    },
+    {
+      "role": "assistant",
+      "scripted": true,
+      "content": "I'm sorry — this is an automated assistant that screens calls for this number. I'm going to put you through to voicemail now, and your message will be seen."
+    }
+  ],
+  "steering": []
+}
