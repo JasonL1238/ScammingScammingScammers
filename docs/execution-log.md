@@ -34,7 +34,12 @@ For every new CI gate: push a throwaway branch seeding the named regression,
 the branch (or push the revert). Deleting or reverting while the seeded run is
 in flight would leave no red evidence. Main never contains the regression.
 
-## Phase 1 — Groundwork: safety hygiene, CI, migration machinery — IN PROGRESS
+## Phase 1 — Groundwork: safety hygiene, CI, migration machinery — COMPLETE
+
+Closed 2026-08-26. All eight exit criteria ticked with evidence (checklist at
+the end of this phase's section); the next phase is the roadmap's Phase 2,
+deterministic replay, which begins with its own log entry below when work
+starts.
 
 ### T1.1 — CI bootstrap
 
@@ -632,6 +637,12 @@ in flight would leave no red evidence. Main never contains the regression.
   comment tense.
 - **Verification (final tree):** 688 passed / 16 skipped (21 in the geocode
   module); textloop dry exit 0; `ruff check .` clean.
+- **Green on main:** run
+  [32939279849](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/32939279849)
+  (commit `322ed26`) — all eight jobs. No new CI gate was added (the geocode
+  check is pre-launch by design; its 21 tests ride the existing `tests` gate),
+  so no red-proof branch applies; the old tokenizer's failure of the new
+  coupling test was executed by both adversaries during the review.
 - **Escalations:** none.
 
 ### Phase 1 exit-criteria checklist
