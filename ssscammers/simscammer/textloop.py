@@ -12,6 +12,11 @@ judged in seconds rather than by waiting for someone to call.
 model at all — no API key, no network — which makes it the fast way to check that a
 misrouted caller gets released or that a script is classified as expected.
 
+Every run prints the seed of its per-call rng; ``--seed N`` passes one back in, which
+reproduces a dry run draw-for-draw (tactics, fillers, holds, clips). With
+``--all-scripts`` the one seed is reused for every script, so a whole gate run is
+reproducible from a single number.
+
 What runs here is the same :class:`~ssscammers.agent.conversation.Conversation` the phone
 line runs; only the clock and the speakers are fake. That is the value of the harness: a
 judgement made here is about production behaviour, not about a parallel implementation of
@@ -121,7 +126,9 @@ def _describe(session: Session, actions: list[Action]) -> str:
     return "  ".join(bits)
 
 
-def _build_session(persona_id: str, *, dry: bool, forwarded: bool) -> Session:
+def _build_session(
+    persona_id: str, *, dry: bool, forwarded: bool, seed: int | None = None
+) -> Session:
     settings = load_settings()
 
     brain: ClaudeBrain | None = None
@@ -144,6 +151,7 @@ def _build_session(persona_id: str, *, dry: bool, forwarded: bool) -> Session:
         persona_id=persona_id,
         brain=brain,
         clock=clock,
+        seed=seed,
     )
     return Session(conversation=conversation, clock=clock)
 
@@ -153,6 +161,8 @@ async def run_script(session: Session, script: CallerScript) -> int:
     print(BOLD(f"\n=== {script.name} ") + DIM(f"[{', '.join(script.tags)}]"))
     if script.notes:
         print(DIM(f"    {script.notes}"))
+    # Every run is reproducible: re-run with --seed to get this exact call again.
+    print(DIM(f"    seed={session.conversation.seed}"))
     print()
 
     persona = session.conversation.director.persona
@@ -208,6 +218,7 @@ async def run_interactive(session: Session) -> None:
     """Type as the scammer; read what comes back."""
     persona = session.conversation.director.persona
     print(BOLD(f"\n  {persona.display_name} — {persona.description.strip()}"))
+    print(DIM(f"  seed={session.conversation.seed}"))
     print(DIM("  Type as the caller. Ctrl-D or 'quit' to hang up.\n"))
 
     for action in await session.conversation.open():
@@ -257,6 +268,12 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="simulate a call rolled over from the owner's cell (stricter triage)",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        help="seed the per-call rng for a reproducible run; every run prints the "
+        "seed it used, so any call can be replayed by passing it back",
+    )
     args = parser.parse_args(argv)
 
     scripts_by_name = {s.name: s for s in ALL_SCRIPTS}
@@ -264,7 +281,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.all_scripts:
         failures = 0
         for script in ALL_SCRIPTS:
-            session = _build_session(args.persona, dry=args.dry, forwarded=args.forwarded)
+            session = _build_session(
+                args.persona, dry=args.dry, forwarded=args.forwarded, seed=args.seed
+            )
             failures += asyncio.run(run_script(session, script))
         print()
         if failures:
@@ -279,10 +298,14 @@ def main(argv: list[str] | None = None) -> int:
             print(RED(f"unknown script {args.script!r}"))
             print(DIM("available: " + ", ".join(sorted(scripts_by_name))))
             return 2
-        session = _build_session(args.persona, dry=args.dry, forwarded=args.forwarded)
+        session = _build_session(
+            args.persona, dry=args.dry, forwarded=args.forwarded, seed=args.seed
+        )
         return 1 if asyncio.run(run_script(session, script)) else 0
 
-    session = _build_session(args.persona, dry=args.dry, forwarded=args.forwarded)
+    session = _build_session(
+        args.persona, dry=args.dry, forwarded=args.forwarded, seed=args.seed
+    )
     asyncio.run(run_interactive(session))
     return 0
 

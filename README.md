@@ -79,7 +79,8 @@ python -m ssscammers.simscammer.textloop --persona marjorie
 
 This runs the same conversation driver a real call runs; only the clock and the speakers
 are fake. `--dry` skips the model entirely, `--script <name>` plays a canned caller, and
-`--all-scripts` is the release gate.
+`--all-scripts` is the release gate. Every run prints its rng seed; `--seed <n>`
+reproduces a dry run draw-for-draw.
 
 ### Run the agent
 

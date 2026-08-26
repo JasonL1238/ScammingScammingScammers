@@ -218,6 +218,23 @@ class TestABadPersonaBundleIsRefusedAtLoad:
         with pytest.raises(ValueError, match="unknown sound_pack key"):
             load_persona("s")
 
+    def test_a_blank_sound_pack_entry_is_refused(self, bundles: Path) -> None:
+        # An empty filename loads as a clip the rng can pick but nothing can play:
+        # the hold event would record a clip the caller never heard.
+        write_bundle(bundles, "b", {"id": "b", "sound_pack": {"holds": [""]}})
+        with pytest.raises(ValueError, match="non-empty filenames"):
+            load_persona("b")
+
+    def test_a_non_string_sound_pack_entry_is_refused(self, bundles: Path) -> None:
+        write_bundle(bundles, "n", {"id": "n", "sound_pack": {"fillers": [3]}})
+        with pytest.raises(ValueError, match="non-empty filenames"):
+            load_persona("n")
+
+    def test_a_blank_ambient_is_refused(self, bundles: Path) -> None:
+        write_bundle(bundles, "a", {"id": "a", "sound_pack": {"ambient": " "}})
+        with pytest.raises(ValueError, match="ambient must be a non-empty filename"):
+            load_persona("a")
+
     def test_a_pacing_value_that_is_not_a_number_is_refused(self, bundles: Path) -> None:
         # `hold_probability: "0.15"` (quoted) used to load and then raise TypeError inside
         # `PersonaDirector._plan` on the first turn that considered a hold — a config typo

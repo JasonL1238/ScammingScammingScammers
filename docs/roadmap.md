@@ -197,7 +197,8 @@ unbuilt behavior in the present tense.
 ### Phase 2 — Deterministic replay foundation *(K)*
 
 **Goal.** Make every call replayable **before** anything durable is recorded — a corpus
-persisted from today's seedless, partial event log is unreplayable forever, and
+persisted from today's partial event log (seedless until this phase's first task
+seeded it) is unreplayable forever, and
 `plan.md` M0's byte-identical criterion becomes retroactively unmeetable. This phase is
 also the last free moment to change event payload shapes: no DB rows exist yet, so no
 persisted-shape authorization is needed.

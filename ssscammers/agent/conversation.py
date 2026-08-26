@@ -161,7 +161,14 @@ class Conversation:
         events: Canonical log sink.
         generation_timeout_seconds: Ceiling on one turn's generation. A hung stream
             must degrade to a stalling noise, not to silence on a live call.
-        rng: Fumble-line selection.
+        rng: Fumble-line and hold-clip selection. In production this is the tail of
+            the one seeded per-call stream :func:`build_conversation` shares across
+            the director, the filter, and this object — a second stream would break
+            byte-identical replay, as would replaying against different model
+            replies (see :func:`build_conversation`).
+        seed: The integer that seeded ``rng``, recorded in the ``call_opened``
+            payload so the call can be re-driven draw-for-draw. ``None`` only when
+            a test injected an rng directly; production calls always carry one.
     """
 
     director: PersonaDirector
@@ -171,6 +178,7 @@ class Conversation:
     events: EventSink = field(default_factory=LoggingEventSink)
     generation_timeout_seconds: float = 12.0
     rng: random.Random = field(default_factory=random.Random)
+    seed: int | None = None
 
     _history: list[Turn] = field(default_factory=list, init=False)
     _started_at: float | None = field(default=None, init=False)
@@ -252,6 +260,7 @@ class Conversation:
                 "caller": self.director.caller_number,
                 "entry_path": self.director.entry_path.value,
                 "phase": plan.phase.value,
+                "seed": self.seed,
             },
         )
         return [Say(greeting)] if greeting else []
@@ -387,11 +396,13 @@ class Conversation:
                 yield action
 
             if plan.hold_seconds:
-                if self.director.persona.holds:
-                    yield PlayClip(self.rng.choice(self.director.persona.holds), kind="hold")
+                holds = self.director.persona.holds
+                clip = self.rng.choice(holds) if holds else None
+                if clip is not None:
+                    yield PlayClip(clip, kind="hold")
                 self._occupy_line(float(plan.hold_seconds))
                 yield Pause(float(plan.hold_seconds))
-                await self._emit("hold", {"seconds": plan.hold_seconds})
+                await self._emit("hold", {"seconds": plan.hold_seconds, "clip": clip})
 
         if plan.hang_up:
             self._ended = True
@@ -462,9 +473,11 @@ class Conversation:
             # spoken, then fed back to the model as the persona's own last words.
             failure = "truncated"
 
+        fumbled = False
         if not spoken:
             # Silence is the one thing that cannot happen here — it reads as a dropped
             # call and ends the bait. A fumble is a perfectly good stalling turn.
+            fumbled = True
             fumble = self.rng.choice(FUMBLE_LINES)
             spoken.append(fumble)
             yield Say(fumble)
@@ -480,6 +493,11 @@ class Conversation:
                 "tactic": plan.tactic.value,
                 "phase": plan.phase.value,
                 "failure": failure,
+                # The turn's drawn values. The replay runner diffs these to catch a
+                # diverged rng stream at the turn that diverged, not downstream.
+                "filler": plan.filler,
+                "character_delay_ms": plan.character_delay_ms,
+                "fumbled": fumbled,
             },
         )
 
@@ -537,16 +555,30 @@ def build_conversation(
     events: EventSink | None = None,
     allowlist: AllowlistCache | None = None,
     clock: Callable[[], float] = time.monotonic,
-    rng: random.Random | None = None,
+    seed: int | None = None,
 ) -> Conversation:
     """Assemble a conversation from configuration.
 
     The caps come from :class:`~ssscammers.shared.config.Settings` rather than from each
     call site: there was a version of this project where the media pipeline and the text
     harness disagreed about the hard cap and only one of them was tested.
+
+    All randomness flows from one seeded stream shared by the director, the output
+    filter, and the conversation. ``seed`` is drawn from OS entropy when not given,
+    and is always recorded in the ``call_opened`` payload — the same seed, the same
+    caller turns, the same clock, *and the same model reply stream* reproduce the
+    call draw-for-draw, which is what the replay gate diffs against. The fourth
+    input matters: the fumble draw fires only when a reply stream is empty and the
+    filter's replacement draw only when a sentence is blocked, so a different reply
+    consumes a different number of draws and shifts every draw after it — replay
+    therefore re-drives recorded replies (the ReplayBrain seam), never a live
+    model. There is deliberately no way to pass a bare ``random.Random`` here: an
+    unrecorded rng is an unreplayable call.
     """
     persona = load_persona(persona_id or settings.default_persona)
-    shared_rng = rng or random.Random()
+    if seed is None:
+        seed = random.SystemRandom().getrandbits(64)
+    shared_rng = random.Random(seed)
 
     director = PersonaDirector(
         persona=persona,
@@ -573,4 +605,5 @@ def build_conversation(
         clock=clock,
         events=events or LoggingEventSink(),
         rng=shared_rng,
+        seed=seed,
     )

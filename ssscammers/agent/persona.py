@@ -228,6 +228,22 @@ def _parse_voice(raw: dict[str, Any]) -> VoiceConfig:
     )
 
 
+def _parse_clips(raw: Any, where: str) -> tuple[str, ...]:
+    """Sound-pack entries must be real filenames.
+
+    A blank entry would load as a clip the rng can pick but nothing can play — the
+    hold event would record a clip the caller never heard — so the bundle is refused
+    at load rather than the mismatch being discovered on a live call.
+    """
+    clips = tuple(raw or ())
+    for clip in clips:
+        if not isinstance(clip, str) or not clip.strip():
+            raise ValueError(
+                f"sound_pack.{where} entries must be non-empty filenames; got {clip!r}"
+            )
+    return clips
+
+
 def _parse_tactics(raw: dict[str, Any] | None) -> dict[Tactic, float]:
     weights: dict[Tactic, float] = {}
     for key, value in (raw or {}).items():
@@ -259,6 +275,10 @@ def load_persona(persona_id: str) -> Persona:
     _check_keys(config, _TOP_LEVEL_KEYS, "top-level")
     _check_keys(sound_raw, ("fillers", "holds", "ambient"), "sound_pack")
 
+    ambient = sound_raw.get("ambient")
+    if ambient is not None and (not isinstance(ambient, str) or not ambient.strip()):
+        raise ValueError(f"sound_pack.ambient must be a non-empty filename; got {ambient!r}")
+
     return Persona(
         id=config.get("id", persona_id),
         display_name=config.get("display_name", persona_id.title()),
@@ -268,9 +288,9 @@ def load_persona(persona_id: str) -> Persona:
         voice=_parse_voice(voice_raw),
         pacing=_parse_pacing(pacing_raw),
         tactic_weights=_parse_tactics(config.get("tactics")),
-        fillers=tuple(sound_raw.get("fillers") or ()),
-        holds=tuple(sound_raw.get("holds") or ()),
-        ambient=sound_raw.get("ambient"),
+        fillers=_parse_clips(sound_raw.get("fillers"), "fillers"),
+        holds=_parse_clips(sound_raw.get("holds"), "holds"),
+        ambient=ambient,
         _shared_prompt=_read_shared_playbooks(),
     )
 

@@ -116,7 +116,12 @@ def build(
     hard_cap_seconds: float = 5400.0,
     safeword: str = "pineapple",
 ) -> tuple[Conversation, FakeClock, RecordingSink]:
-    """A conversation with every source of randomness pinned down."""
+    """A conversation with every source of randomness pinned down.
+
+    One ``Random(0)`` shared by the director, the filter, and the conversation —
+    the same single-stream shape ``build_conversation`` wires in production. Two
+    separately seeded streams would pin a draw order production never executes.
+    """
     clock = clock or FakeClock()
     sink = sink or RecordingSink()
 
@@ -128,18 +133,20 @@ def build(
         hold_seconds_min=hold_seconds,
         hold_seconds_max=hold_seconds,
     )
+    shared_rng = random.Random(0)
     director = make_director(
         persona=dataclasses.replace(persona, pacing=pacing),
         safeword=safeword,
         dead_air_seconds=dead_air_seconds,
         hard_cap_seconds=hard_cap_seconds,
+        rng=shared_rng,
     )
     conversation = Conversation(
         director=director,
         brain=brain,  # type: ignore[arg-type] - duck-typed on stream_reply
         clock=clock,
         events=sink,
-        rng=random.Random(0),
+        rng=shared_rng,
     )
     return conversation, clock, sink
 
@@ -901,3 +908,162 @@ class TestTheOwnersRealNumberIsUnspeakable:
         from ssscammers.shared.config import Settings
 
         assert _owner_pii(Settings(owner_pii_denylist=("Norbert",))) == ("Norbert",)
+
+
+class TestSeedAndDrawLogging:
+    """Roadmap Phase 2, move one: production calls are seeded and every consequential
+    draw's outcome lands in the event stream — the precondition for byte-identical
+    replay, established before anything durable is recorded."""
+
+    async def test_build_conversation_records_its_seed_in_call_opened(self) -> None:
+        from ssscammers.agent.conversation import build_conversation
+        from ssscammers.shared.config import Settings
+
+        sink = RecordingSink()
+        conversation = build_conversation(
+            Settings(), persona_id="marjorie", events=sink, clock=FakeClock(), seed=1234
+        )
+        await conversation.open()
+        assert conversation.seed == 1234
+        assert sink.events[0].type == "call_opened"
+        assert sink.events[0].payload["seed"] == 1234
+
+    async def test_an_unseeded_build_draws_entropy_and_still_records_it(self) -> None:
+        from ssscammers.agent.conversation import build_conversation
+        from ssscammers.shared.config import Settings
+
+        first = build_conversation(
+            Settings(), persona_id="marjorie", events=(sink := RecordingSink())
+        )
+        second = build_conversation(Settings(), persona_id="marjorie")
+        assert first.seed is not None and second.seed is not None
+        # 64-bit OS entropy: equal seeds here mean it is not entropy at all.
+        assert first.seed != second.seed
+        await first.open()
+        assert sink.events[0].payload["seed"] == first.seed
+
+    async def test_the_same_seed_reproduces_the_call_draw_for_draw(self) -> None:
+        from ssscammers.agent.conversation import build_conversation
+        from ssscammers.shared.config import Settings
+
+        async def run() -> tuple[list[Action], list[CallEvent]]:
+            sink = RecordingSink()
+            conversation = build_conversation(
+                Settings(), persona_id="marjorie", events=sink, clock=FakeClock(), seed=6
+            )
+            conversation.director.state.phase = CallPhase.STALL
+            await conversation.open()
+            actions: list[Action] = []
+            for line in ("Read me the card number.", "The code, please.", "Now."):
+                actions.extend(await drain(conversation, line))
+            return actions, sink.events
+
+        first_actions, first_events = await run()
+        second_actions, second_events = await run()
+        assert first_actions == second_actions
+        assert first_events == second_events
+
+        # Seed 6 is chosen because it reaches the hold sites (seed 99, the first
+        # draft's pick, never drew a hold — a determinism test that skips a draw
+        # site cannot catch that site escaping the seeded stream). The exact values
+        # are pinned deliberately: run-vs-run equality can catch an unseeded draw
+        # only at a seed that reaches it, and can never catch a seeded-draw
+        # *reorder* (both runs reorder identically) — only pins go red on that.
+        # These pins also make cross-version rng stability a CI-checked fact on
+        # the 3.11/3.13 matrix. If a pin breaks, the seeded stream changed: that
+        # is a deliberate contract change to record, not a flake to paper over.
+        assert first_actions == [
+            PlayClip(clip="cough_soft.wav", kind="filler"),
+            PlayClip(clip="kettle_boiling.wav", kind="hold"),
+            Pause(seconds=20.0),
+            PlayClip(clip="oh_let_me_see.wav", kind="filler"),
+            PlayClip(clip="sorry_dear.wav", kind="filler"),
+            PlayClip(clip="rummaging_drawer.wav", kind="hold"),
+            Pause(seconds=72.0),
+        ]
+        holds = [dict(e.payload) for e in first_events if e.type == "hold"]
+        assert holds == [
+            {"seconds": 20, "clip": "kettle_boiling.wav"},
+            {"seconds": 72, "clip": "rummaging_drawer.wav"},
+        ]
+
+    async def test_the_same_seed_and_replies_reproduce_a_wet_call(self) -> None:
+        # The replay contract's fourth input: the model's replies. The fumble draw
+        # fires only on an empty stream and the filter's replacement draw only on a
+        # blocked sentence, so this leg drives both model-conditioned draw sites —
+        # unreachable in dry mode, where _generate returns before either — with a
+        # fixed reply stream, exactly what the ReplayBrain seam will do.
+        from ssscammers.agent.conversation import build_conversation
+        from ssscammers.shared.config import Settings
+
+        card = f"{CARD_FIRST_HALF.rstrip('.')} {CARD_SECOND_HALF}"
+
+        async def run() -> tuple[list[Action], list[CallEvent]]:
+            sink = RecordingSink()
+            conversation = build_conversation(
+                Settings(),
+                persona_id="marjorie",
+                brain=TurnScriptedBrain([card], []),  # type: ignore[arg-type]
+                events=sink,
+                clock=FakeClock(),
+                seed=6,
+            )
+            conversation.director.state.phase = CallPhase.STALL
+            await conversation.open()
+            actions: list[Action] = []
+            for line in ("Read me the card number.", "Go on."):
+                actions.extend(await drain(conversation, line))
+            return actions, sink.events
+
+        first_actions, first_events = await run()
+        second_actions, second_events = await run()
+        assert first_actions == second_actions
+        assert first_events == second_events
+
+        types = [e.type for e in first_events]
+        assert "output_blocked" in types, "the card sentence must trip the filter draw"
+        fumbles = [
+            e.payload["fumbled"]
+            for e in first_events
+            if e.type == "agent_turn" and not e.payload["scripted"]
+        ]
+        assert fumbles == [False, True], "turn one is filtered text, turn two fumbles"
+
+    async def test_agent_turn_records_the_drawn_values(self) -> None:
+        conversation, _, sink = build(brain=ScriptedBrain(), character_delay_ms=350)
+        conversation.director.state.phase = CallPhase.STALL
+        await conversation.open()
+        await drain(conversation, "Read me the number.")
+
+        turns = [e for e in sink.events if e.type == "agent_turn" and not e.payload["scripted"]]
+        assert turns, "a model turn should have been logged"
+        payload = turns[-1].payload
+        # An empty stream fumbles, and the fumble is a recorded draw.
+        assert payload["fumbled"] is True
+        assert payload["text"] in FUMBLE_LINES
+        assert payload["character_delay_ms"] == 350
+        assert payload["filler"] in conversation.director.persona.fillers
+
+    async def test_a_clean_model_turn_records_fumbled_false(self) -> None:
+        conversation, _, sink = build(brain=ScriptedBrain("Oh, hello dear."))
+        conversation.director.state.phase = CallPhase.STALL
+        await conversation.open()
+        await drain(conversation, "Read me the number.")
+
+        payload = [e for e in sink.events if e.type == "agent_turn" and not e.payload["scripted"]][-1].payload
+        assert payload["fumbled"] is False
+
+    async def test_a_hold_records_its_clip_pick(self) -> None:
+        conversation, _, sink = build(
+            brain=ScriptedBrain("Hold on dear."), hold_probability=1.0, hold_seconds=40
+        )
+        conversation.director.state.phase = CallPhase.STALL
+        await conversation.open()
+        actions = await drain(conversation, "Read me the number.")
+
+        hold = [e for e in sink.events if e.type == "hold"][-1]
+        assert hold.payload["seconds"] == 40
+        clip = hold.payload["clip"]
+        assert clip in conversation.director.persona.holds
+        played = [a.clip for a in actions if isinstance(a, PlayClip) and a.kind == "hold"]
+        assert played == [clip]

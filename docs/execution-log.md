@@ -693,3 +693,75 @@ throwaway branches.
   recorded playbook exemption); re-checked at the T1.8 close-out over every
   surface T1.4–T1.8 added — no new violations, one adjudicated exemption
   (`001_initial.sql` column comments; checksum-frozen, see T1.8).
+
+## Phase 2 — Deterministic replay foundation — IN PROGRESS
+
+### T2.1 — Seed the production RNG; log every consequential draw
+
+- **Scope:** `build_conversation` mints a per-call seed (OS entropy when not
+  given), constructs the one shared `random.Random(seed)` for director, filter,
+  and conversation, and records the seed in the `call_opened` payload; the
+  `rng` parameter is gone — an unrecorded rng is an unreplayable call, so there
+  is deliberately no way to pass one. Draw outcomes now land in the stream:
+  `hold` events carry the drawn `clip`, model-path `agent_turn` events carry
+  `filler`/`character_delay_ms`/`fumbled`. The textloop gained `--seed` (every
+  run prints the seed it used; `--all-scripts --seed N` reproduces the whole
+  gate from one number), documented in its docstring and README. The consequential
+  draw sites, catalogued: tactic, hold-probability, hold-length, filler, and
+  character-delay draws in `persona_director._plan`; the hold-clip pick in
+  `Conversation._execute`; the fumble pick in `_generate`; the filter's
+  replacement-line pick in `output_filter` (fires on a block).
+- **Rule 1 review** (two adversaries, cross-refutation; every claim probe-backed):
+  - *A-1 (survived, sharpened by B):* the replay docstring named three inputs —
+    seed, caller turns, clock — omitting the fourth, the **model reply stream**:
+    the fumble draw fires only on an empty stream and the filter's replacement
+    draw only on a blocked sentence, so a different reply shifts every draw
+    after it. B sharpened it: transcript-based replay is *impossible* for
+    blocked turns (the raw blocked sentence exists nowhere in the log — only
+    the replacement text does), which is exactly why the roadmap pairs
+    ReplayBrain with a recorded-client fake. **Fixed:** the docstring names all
+    four inputs and states that replay re-drives recorded replies.
+  - *B-F1 (HIGH, survived; A reproduced every probe):* the determinism test's
+    seed (99) never drew a hold — its own coverage comment was false — and
+    membership-only assertions let a deliberately unseeded hold-clip draw
+    survive the whole suite (mutant executed by both adversaries). Run-vs-run
+    equality kills unseeded-draw mutants only at seeds that reach the site and
+    can never catch a seeded-draw reorder; only pinned values can. **Fixed:**
+    the test now uses seed 6 (verified: two holds), pins the exact action list
+    and hold payloads, and a new wet leg drives both model-conditioned draw
+    sites (a blockable card sentence → filter draw; an empty reply → fumble
+    draw) with a fixed reply stream. Mutation red-proof executed: the unseeded
+    `random.choice(holds)` mutant now fails the pinned test (1 failed), reverted.
+    The pins also make cross-version rng stability a CI-checked fact on the
+    3.11/3.13 matrix (B-F5, discharged — 3.12/3.13 fingerprints verified
+    identical locally; 3.11 closed by the matrix).
+  - *B-F2 (survived):* the `build()` test helper wired two `Random(0)` streams
+    (director vs conversation) — the exact two-stream shape the new docstring
+    forbids, and a golden recorded through it would encode a draw order
+    production never executes. **Fixed:** one shared `Random(0)`, landed
+    *before* the pins were recorded (A's sequencing constraint); A pre-verified
+    the fix against the full module (71 passed).
+  - *A-2 (survived at LOW):* the hold-clip hoist changed `if holds:` to a
+    truthiness guard, so an empty-string bundle entry would record a `clip` the
+    caller never heard (loader accepts `holds: [""]` silently — both
+    adversaries verified). **Fixed** per B's Rule 0 argument at the loader:
+    sound-pack entries (fillers, holds, ambient) must be non-empty strings,
+    three red loader tests added; the guard is now `is not None` as
+    self-documentation.
+  - *A-minor / B-rider (converged):* the entropy-path test never asserted the
+    "records it" half of its own name. **Fixed** — it opens the call and pins
+    the recorded payload.
+  - *Dropped with reasons:* B-F4's line-anchor patch (the roadmap pre-disclaims
+    line drift; symbols are the durable anchors — committed precedent);
+    platform-scoping the pins (a ~1e-15 gauss-boundary flake is the wrong trade
+    against losing reorder detection; red-on-divergence is the point).
+  - *Also fixed:* roadmap's "seedless" present-tense fact re-tensed (factual-
+    state patch per T1.3 policy).
+- **Verification (final tree):** 698 passed / 16 skipped (10 new tests);
+  textloop dry exit 0; two `--all-scripts --dry --seed 7` runs byte-identical,
+  seed 8 differs (CLI-level determinism, executed); `ruff check .` clean.
+  Process note recorded honestly: the mutation red-proof's restore step used
+  `git checkout` on a file carrying uncommitted task work and wiped it; the
+  edits were reapplied from context and the full suite re-verified green —
+  future mutations copy the file aside first.
+- **Escalations:** none.
