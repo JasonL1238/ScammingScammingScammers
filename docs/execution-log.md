@@ -701,7 +701,15 @@ throwaway branches.
   surface T1.4–T1.8 added — no new violations, one adjudicated exemption
   (`001_initial.sql` column comments; checksum-frozen, see T1.8).
 
-## Phase 2 — Deterministic replay foundation — IN PROGRESS
+## Phase 2 — Deterministic replay foundation — BLOCKED ON THE OWNER
+
+Eight tasks landed; four of the five exit criteria are met and verified fresh
+against main (checklist at the end of this section). The fifth — the LLM
+adversary's mean simulated time-on-call — needs a funded API key and a spend
+decision, so it cannot be completed autonomously. Two other decisions are also
+open: whether probation expiry may commit an unclear caller (raised at T2.6),
+and whether Phase 2's exit criterion should say "recorded" or "synthesized"
+call (raised at T2.8).
 
 ### T2.1 — Seed the production RNG; log every consequential draw
 
@@ -1302,3 +1310,50 @@ paths, release within two turns."
   of the five that survived the first draft and were retested: G-4 hole → 1
   failure, G-16 removed → 4, steering rewritten → 4, greeting silenced → 7,
   commit bar raised → 1; probation window → still green, refuted above.
+
+### Phase 2 exit-criteria checklist
+
+Copied from `roadmap.md` Phase 2 and re-executed against main at the close of
+T2.8, not carried forward from the tasks that first satisfied them.
+
+- [x] **A recorded call replays byte-identically in CI (events, seq, payloads,
+  transcript.)** Evidence: `tests/test_goldens.py`, 42 passed — six manifests
+  re-driven through the production driver and diffed field for field, plus the
+  transcript and the steering. *Qualified:* the goldens are **authored, not
+  captured** — see the T2.8 escalation. The mechanism is real and mutation-
+  proven; the corpus is synthetic.
+- [x] **Misroute FPR=0 becomes a merge-blocking gate (all misroute scripts ×
+  all personas × both entry paths, release within two turns).** Evidence:
+  `TestRealPeopleAreAlwaysReleased`, 91 passed over the full cross-product,
+  asserting the exact exit each script declares. Red-proofs recorded at T2.6.
+  *Known limit, escalated:* no script is long enough to reach the probation
+  hard-commit boundary.
+- [x] **A deliberately-broken persona fails the new adversarial predicates
+  (red-test proof).** Evidence: `tests/test_adversarial_predicates.py`, 58
+  passed — every predicate carries a compliant shape that fails and an
+  in-character shape that stays clean.
+- [x] **Exactly one fake clock exists.** Evidence: a class-level grep finds one
+  definition, `ssscammers/simscammer/clock.py`; T2.8 went further and
+  collapsed the two *call drivers* onto one `Session` as well.
+- [ ] **The LLM adversary reports mean simulated time-on-call, recording the
+  baseline against which M2's ≥3-minute criterion and Phase 11's pre-registered
+  margin are judged.** **Blocked:** needs a funded Anthropic key and a spend
+  budget. Nothing about it can be verified offline — the whole point is a live
+  model driving a real scam script — so it is the one criterion that cannot be
+  closed without the owner.
+
+### Open decisions for the owner, carried out of Phase 2
+
+1. **May probation expiry commit an UNCLEAR caller to baiting?** (T2.6.) It
+   does today, at 90s. Recommendation: keep it, close the gap in Phase 10 where
+   the corpus grows and a mid-call posterior can revisit the commitment; the
+   behaviour is pinned by test so a change is visible.
+2. **Should the replay exit criterion say "recorded" or "synthesized"?**
+   (T2.8.) No recorder exists, so per-turn timing is a rule rather than data.
+   Recommendation: amend the wording and schedule the recorder against Phase 5,
+   where persisted rows give capture a real source.
+3. **The LLM adversary's budget** (above), which also decides whether Phase 2
+   closes now with four of five criteria or waits.
+4. **The deictic persona-break gap in `output_filter.py`** (T2.5), queued as
+   its own task: the pre-TTS filter catches only first-person AI admissions, so
+   "this is an automated assistant" would reach a scammer uncaught.
