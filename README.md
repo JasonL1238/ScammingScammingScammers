@@ -87,16 +87,23 @@ reproduces a dry run draw-for-draw.
 A handful of calls are pinned end to end — their event stream, transcript, and the
 steering the model was asked under — and CI replays each one and diffs it byte for
 byte. The manifests live in [`ssscammers/simscammer/golden.py`](ssscammers/simscammer/golden.py)
-and the recorded streams in `tests/goldens/`.
+and the pinned streams in `tests/goldens/`.
+
+These calls are **authored, not captured**. Nothing here was recorded off a real phone
+line: the caller is a written script, the model's side is a canned reply stream, and the
+gaps between turns are a rule rather than measured time. That makes the *mechanism*
+real — the production driver runs, and a behaviour change shows up as a diff — while
+the *corpus* is synthetic. Capturing an actual call and replaying it is scheduled work
+([`docs/roadmap.md`](docs/roadmap.md) Phase 5).
 
 ```bash
 python scripts/regenerate_goldens.py
 ```
 
 Run that only when a change to the stream is *intended*, and read the diff before
-committing it: a golden is the record of what the system did, so regenerating one to
-make a test pass is how a regression becomes the baseline. It needs no API key — the
-model side of each golden is a recording.
+committing it: a golden is the record of what the system did with these inputs, so
+regenerating one to make a test pass is how a regression becomes the baseline. It needs
+no API key — the model side of each golden is a canned recording, never a live call.
 
 ### Run the agent
 

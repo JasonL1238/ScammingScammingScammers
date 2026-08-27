@@ -701,15 +701,15 @@ throwaway branches.
   surface T1.4–T1.8 added — no new violations, one adjudicated exemption
   (`001_initial.sql` column comments; checksum-frozen, see T1.8).
 
-## Phase 2 — Deterministic replay foundation — BLOCKED ON THE OWNER
+## Phase 2 — Deterministic replay foundation — FOUR OF FIVE CRITERIA MET
 
 Eight tasks landed; four of the five exit criteria are met and verified fresh
 against main (checklist at the end of this section). The fifth — the LLM
-adversary's mean simulated time-on-call — needs a funded API key and a spend
-decision, so it cannot be completed autonomously. Two other decisions are also
-open: whether probation expiry may commit an unclear caller (raised at T2.6),
-and whether Phase 2's exit criterion should say "recorded" or "synthesized"
-call (raised at T2.8).
+adversary's mean simulated time-on-call — is blocked on an authorized spend, and
+stays this phase's work. The two design questions raised at T2.6 and T2.8 were
+answered by the owner on 2026-08-26; a third, the adversary's budget, got a
+disposition rather than an answer, and two new questions were raised. All of it
+is at the end of this section.
 
 ### T2.1 — Seed the production RNG; log every consequential draw
 
@@ -1120,6 +1120,8 @@ paths, release within two turns."
   by `TestTheProbationBoundaryIsTheKnownGapInTheGate` so changing it is a
   visible decision. Escalated rather than fixed here because it is a product
   call about the FPR/engagement trade, not a defect in this diff.
+  *(Answered 2026-08-26 — yes. See the owner reply at the end of this section;
+  this entry stands as the record of what T2.6 escalated at the time.)*
 - **Verification (final tree):** 848 passed / 16 skipped (51 → 120 in the gate
   module); textloop dry exit 0; `ruff check .` clean. Local red-proofs, run
   under the amended cache-clearing procedure: legit bar raised → 24 failures;
@@ -1304,7 +1306,10 @@ paths, release within two turns."
   2's wording to "a synthesized call", and schedule the recorder against Phase
   5, where persisted rows make capture necessary and give it a real source.
   Escalated rather than decided here because it changes the roadmap's own exit
-  criterion.
+  criterion. *(Answered 2026-08-26 — synthesized. See the owner reply at the end
+  of this section, which also records that "give it a real source" was only half
+  right: the rows carry the timing but not the raw deltas. This entry stands as
+  the record of what T2.8 escalated at the time.)*
 - **Verification (final tree):** 950 passed / 16 skipped; textloop dry exit 0;
   `ruff check .` clean. Mutation re-run under the cache-clearing procedure —
   of the five that survived the first draft and were retested: G-4 hole → 1
@@ -1316,18 +1321,20 @@ paths, release within two turns."
 Copied from `roadmap.md` Phase 2 and re-executed against main at the close of
 T2.8, not carried forward from the tasks that first satisfied them.
 
-- [x] **A recorded call replays byte-identically in CI (events, seq, payloads,
-  transcript.)** Evidence: `tests/test_goldens.py`, 42 passed — six manifests
-  re-driven through the production driver and diffed field for field, plus the
-  transcript and the steering. *Qualified:* the goldens are **authored, not
-  captured** — see the T2.8 escalation. The mechanism is real and mutation-
-  proven; the corpus is synthetic.
+- [x] **A synthesized call replays byte-identically in CI (events, seq,
+  payloads, transcript.)** Evidence: `tests/test_goldens.py`, 42 passed — six
+  manifests re-driven through the production driver and diffed field for field,
+  plus the transcript and the steering. The criterion read "a **recorded**
+  call" until the owner amended it on 2026-08-26; the goldens are authored, and
+  capture-and-replay is now Phase 5's. The mechanism is real and
+  mutation-proven; the corpus is synthetic, and the criterion says so.
 - [x] **Misroute FPR=0 becomes a merge-blocking gate (all misroute scripts ×
   all personas × both entry paths, release within two turns).** Evidence:
   `TestRealPeopleAreAlwaysReleased`, 91 passed over the full cross-product,
   asserting the exact exit each script declares. Red-proofs recorded at T2.6.
-  *Known limit, escalated:* no script is long enough to reach the probation
-  hard-commit boundary.
+  *Known limit, now a settled decision:* no script is long enough to reach the
+  probation hard-commit boundary, and the owner confirmed on 2026-08-26 that
+  crossing it may commit an unclear caller. Corpus growth is Phase 10's.
 - [x] **A deliberately-broken persona fails the new adversarial predicates
   (red-test proof).** Evidence: `tests/test_adversarial_predicates.py`, 58
   passed — every predicate carries a compliant shape that fails and an
@@ -1337,23 +1344,355 @@ T2.8, not carried forward from the tasks that first satisfied them.
   collapsed the two *call drivers* onto one `Session` as well.
 - [ ] **The LLM adversary reports mean simulated time-on-call, recording the
   baseline against which M2's ≥3-minute criterion and Phase 11's pre-registered
-  margin are judged.** **Blocked:** needs a funded Anthropic key and a spend
-  budget. Nothing about it can be verified offline — the whole point is a live
-  model driving a real scam script — so it is the one criterion that cannot be
-  closed without the owner.
+  margin are judged.** **Still blocked — on an authorized spend, not on a key.**
+  The ask, the scale estimate, and the CI-secret caveat are `roadmap.md` open
+  decision 5; they live there rather than here so a correction touches one
+  passage. Nothing about this criterion can be verified offline — the whole
+  point is a live model driving a real scam script — and it stays Phase 2's
+  work rather than being moved in front of a later phase that has nothing to do
+  with it.
 
-### Open decisions for the owner, carried out of Phase 2
+### Owner reply of 2026-08-26 — what it decided, and what it did not
 
-1. **May probation expiry commit an UNCLEAR caller to baiting?** (T2.6.) It
-   does today, at 90s. Recommendation: keep it, close the gap in Phase 10 where
-   the corpus grows and a mid-call posterior can revisit the commitment; the
-   behaviour is pinned by test so a change is visible.
+The reply, quoted exactly and in full, is the only primary source for what
+follows:
+
+> sysrehnsized nore recordsed. turn an unclear caller to batiing. api budget is
+> not as bad for llm. less for other stuff though. proceed ot phase 3
+
+It answers two of the four questions carried out of Phase 2 cleanly, gives a
+disposition rather than an answer on the third, and does not touch the fourth.
+Read it that way rather than as four answers: **an earlier draft of this entry
+converted the third into an approval, a provisioned key, and an owner-supplied
+schedule, none of which the reply says.** That over-reading was caught by the
+Rule 1 review of this task and is corrected below.
+
+1. **May probation expiry commit an UNCLEAR caller to baiting?** (T2.6.)
+   **Answered: yes** — "turn an unclear caller to batiing". Today's behaviour
+   stands: after `probation_hard_commit_seconds` (90s) an unclear caller is
+   committed. No production code changed;
+   `TestTheProbationBoundaryIsTheKnownGapInTheGate` still pins it, and its
+   docstring now records the decision rather than describing an open question,
+   so a future change remains a visible one. The FPR/engagement gap this leaves
+   is real and unchanged: a slow, confused, hard-of-hearing real person is
+   exactly the shape that reaches 90s without tripping a legitimacy signal.
+   Phase 10 is where a mid-call posterior can revisit a commitment; that remains
+   the plan, now as scheduled work rather than as a pending decision.
 2. **Should the replay exit criterion say "recorded" or "synthesized"?**
-   (T2.8.) No recorder exists, so per-turn timing is a rule rather than data.
-   Recommendation: amend the wording and schedule the recorder against Phase 5,
-   where persisted rows give capture a real source.
-3. **The LLM adversary's budget** (above), which also decides whether Phase 2
-   closes now with four of five criteria or waits.
-4. **The deictic persona-break gap in `output_filter.py`** (T2.5), queued as
-   its own task: the pre-TTS filter catches only first-person AI admissions, so
-   "this is an automated assistant" would reach a scammer uncaught.
+   (T2.8.) **Answered: synthesized** — "sysrehnsized nore recordsed".
+   `roadmap.md` Phase 2's first exit criterion is amended in place with a dated
+   note saying what it used to say and why, and the Phase 2 checklist above is
+   re-worded to match. Capture-and-replay moves to Phase 5 with a key move
+   **and** an exit criterion that bites, because a relocated obligation with no
+   criterion is an obligation that never gets built.
+
+   The relocation is narrower than the first draft of this entry claimed — the
+   caller side and the *event-level* gaps are capturable from persisted rows,
+   the model's raw deltas are not, and the media-plane timing columns have no
+   producer until Phase 7. `roadmap.md` Phase 5 carries the corrected shape and
+   the reasoning; it is not restated here, so the two cannot drift.
+3. **The LLM adversary's budget.** **Not an approval — a disposition.** The
+   words are "api budget is not as bad for llm. less for other stuff though."
+   That is cost tolerance. It names no figure and authorizes no run. Two things
+   the first draft of this entry got wrong, both caught by this task's Rule 1
+   review:
+   - It said the criterion "stays blocked, on the key". A key was never the
+     blocker — an adversary checked the host and found one already configured.
+     (Stated that way on purpose: the check was of an untracked, machine-local
+     file, so it is not a fact a committed document can assert. What a reader
+     elsewhere can act on is that credentials resolve several ways, per
+     [`secrets.md`](secrets.md).) The blocker is an authorized figure, and the
+     concrete ask is now `roadmap.md` open decision 5, where an owner reading
+     the active plan will actually find it.
+   - It relocated the adversary to Phase 4 and made it a hard exit criterion
+     there. That was wrong twice: the justification rested on the key claim
+     above, and it would have stopped the G-11 open-line fix — a real safety
+     defect — on an unrelated procurement. The owner's answer to this same
+     blocker one phase earlier was "proceed ot phase 3", i.e. *don't stop for
+     it*. Reverted; the adversary stays Phase 2's, and Phase 11's M4 exit
+     ([`plan.md`](plan.md) M4) is the gate that already fails without the
+     number.
+
+   The ordering — adversary after Phase 3 — remains **this log's decision**,
+   taken from "proceed ot phase 3". The reply is silent on the adversary's
+   position in the sequence.
+
+   What "less for other stuff though" constrains is genuinely ambiguous and is
+   escalated below. Independent of how it resolves, Phase 3's monitor is
+   designed cheap and offline-testable, because that is the right engineering
+   answer under either reading. The rules for that phase — no sampling, a
+   bounded excerpt, and a conftest guard that has to be *built* before "monitor
+   tests run offline" is true of anything — live in `roadmap.md` Phase 3.
+4. **The deictic persona-break gap in `output_filter.py`** (T2.5). **Not
+   raised in the reply; still open.** The pre-TTS filter catches only
+   first-person AI admissions, so "this is an automated assistant" reaches a
+   scammer uncaught. It is queued as its own task. Phase 3 covers the
+   persona-break half of G-17 at the MONITOR layer, which narrows the exposure
+   but does not close it: the monitor is out-of-band and fail-open by design, so
+   the sentence is still spoken before any verdict lands. The CODE-layer fix
+   stays outstanding regardless of what Phase 3 builds. *(This paragraph is
+   analysis, not an owner decision.)*
+
+**One ambiguity resolved silently, recorded here because it should not have
+been.** "turn an unclear caller to batiing" also has a broader reading — *route
+UNCLEAR callers to baiting outright* — which the code genuinely distinguishes
+from the narrow one: `_should_commit` commits on confidence, while
+`probation_hard_commit_seconds` commits on elapsed time
+([`state_machine.py`](../ssscammers/agent/state_machine.py)). The broad reading
+would commit immediately rather than at 90s, a far larger FPR change, and it
+would catch exactly the slow, confused caller decision 1 names. The narrow
+reading is taken as the default because it answers the question that was asked;
+if the broader one was meant, say so and the boundary comes out entirely.
+
+### Open questions for the owner, raised 2026-08-26
+
+Both are also listed in `roadmap.md`'s "Open decisions for the owner" (5 and 6),
+which is where an owner working the active plan will find them.
+
+1. **What does "less for other stuff though" constrain?** Two readings, and
+   nothing in the reply separates them. (a) *Less for everything that is not the
+   adversary*, which would bind Phase 3's monitor. (b) *Less for the non-LLM
+   metered spend* — Deepgram STT, Cartesia TTS, Twilio minutes, all billed per
+   minute and all maximised by design by an agent whose entire goal is wasting a
+   caller's time. **Recommendation:** treat the monitor as budget-constrained
+   either way (the cheap design is correct regardless), and answer only the part
+   that is actually open. It is narrower than it looks: the media spend already
+   has ceilings — `DAILY_MINUTES_CAP=360` and `DAILY_SPEND_CAP_USD=50`, enforced
+   fail-closed at admission — so the question is not "does it need a cap" but
+   "are 360 and $50 the intended numbers". The one genuine defect there is not a
+   decision at all and is not escalated: `ESTIMATED_USD_PER_CALL_MINUTE=0.05`
+   drives the dollar cap and [`config.py`](../ssscammers/shared/config.py) says
+   plainly it is "**Not a measurement**", so the dollar cap is a guess wearing a
+   number. Reconciling it against real invoices is scheduled work, not an owner
+   question. Nothing is blocked on any of this; Phase 3 proceeds under the
+   conservative reading.
+2. **May raw, pre-filter model output be persisted at all?** `roadmap.md` open
+   decision 6 and Phase 5's recorder key move carry the question and the full
+   reasoning; it is not restated here. Two corrections belong in *this* log,
+   because both were wrong in earlier drafts of this entry and both were caught
+   by the Rule 1 review rather than by me:
+   - "Raw model output is on disk today either way" — **false.** Nothing writes
+     a `turns` row: the only `INSERT` in the package is into
+     `schema_migrations`. Phase 5 does not add one string to an existing
+     exposure, it begins the exposure, which changes what the owner is deciding.
+   - "Every sentence that cleared the filter is committed as it streams" —
+     **false**, and it cited the file that disproves it.
+     [`conversation.py`](../ssscammers/agent/conversation.py) joins `spoken` and
+     appends the turn **once**, after the stream loop; per-sentence commit is
+     the thing Phase 4 exists to build. What is true is the *content*: the
+     turn's recorded text is the surviving sentences with a fumble in place of
+     the blocked one.
+
+## Phase 2 close-out — recording the owner's reply
+
+### T2.9 — Record the 2026-08-26 owner reply, and correct what it did not say
+
+- **Scope:** documentation, plus one test class. `docs/execution-log.md` (the
+  owner-reply section above, the Phase 2 heading and checklist, forward
+  pointers on the T2.6 and T2.8 escalations), `docs/roadmap.md` (Phase 2's
+  amended criterion and its open-adversary note, the replay-source correction,
+  workstream row K, Phase 3's cost/testability constraints and offline-guard
+  key move and exit criterion, Phase 5's recorder key move and both replay
+  criteria, three new entries in "Open decisions for the owner"),
+  `docs/plan.md` (the supersession note), `docs/secrets.md` (`ANTHROPIC_BASE_URL`
+  and the proxy variables), `README.md` (the goldens are authored, not
+  captured), `tests/test_call_scripts.py` (docstrings, the assertion message,
+  and a new test). No production code.
+- **Rule 1: four rounds, eight adversaries, four refutation rounds.** The gate
+  re-ran three times because each round's fixes were a large enough change set
+  to be reviewed in their own right, and each re-run found real defects in the
+  previous fix. (Two round-4 adversary runs died on infrastructure — one
+  stalled, one lost its machine to sleep — and were relaunched; a third attempt
+  completed. No finding was lost to that.) Rounds 1 and 2 are summarised by
+  what they changed rather than re-narrated; the drafts they corrected were
+  never committed, so a future reader can check the outcome but not the
+  intermediate text.
+  - **Round 1** caught the substantive error of the task: the reply's "api
+    budget is not as bad for llm" had been written up as an *approval*, a
+    *provisioned key*, and an *owner-supplied schedule*. It is none of those.
+    Also: a Phase 5 key move naming `CallRecording` (the model side, no timing
+    field) for the caller's turns; a relocated obligation with no exit
+    criterion; a present-tense claim about a monitor test suite that does not
+    exist, which falsified a checked-off Phase 1 exit criterion; five stale
+    "escalation" markers; the adversary having no roadmap home; `roadmap.md`'s
+    "from a recorded event log", already adjudicated wrong at T2.8; row K still
+    claiming "no golden gates"; and `plan.md`'s un-amended criterion and its
+    now-wrong supersession count.
+  - **Round 2** found six defects introduced by round 1's fix. The load-bearing
+    one: "no provisioned key" was counterfactual, and it was the justification
+    for having moved the adversary into Phase 4 — which would have stopped the
+    G-11 open-line safety fix on a procurement. Reverted. Also a Phase 3 exit
+    criterion that two adversaries independently *measured* as already green on
+    the pre-phase tree (950/16 under a poisoned key with non-loopback sockets
+    blocked, byte-identical to baseline, none of the 16 skips key-gated); a
+    Phase 5 criterion depending on producers Rescope 6 assigns to Phase 7; a
+    wrong claim about what a filtered turn persists; and `plan.md` widening
+    owner authority a second time.
+  - **Round 3** found six more, three of them substantive:
+    - **The Phase 5 captured-golden criterion was still unmeetable**, now for a
+      new reason — and round 4 showed the fix reasoned from a false measurement,
+      so the corrected statement is given here rather than round 3's. Every
+      `caller_turn` in the shipped goldens follows **the event before it** by
+      exactly `seconds_per_turn`; the caller-to-caller spread (46.1, 26.0, 98.0,
+      59.6, 26.0) is the agent's own speaking and hold time, which replay
+      already reproduces. Round 3 compressed that into "consecutive
+      `caller_turn` events sit exactly `seconds_per_turn` apart", which is
+      plainly false against the corpus, and then inferred that nothing synthetic
+      could produce non-uniform caller gaps — an inference round 4 also
+      demolished independently, since `Session.idle` already advances an
+      arbitrary float. Compounding it, `call_events` persists `ts timestamptz`
+      (wall-clock, stamped by the sink) and **not** `CallEvent.at_seconds`, the
+      monotonic elapsed replay
+      actually drives on. Round 3 made the criterion **wet** on the strength of
+      the false inference; round 4 made it dry and closable again — capture a
+      call driven by an explicit per-turn gap schedule — and filed the real
+      inbound call as open decision 8, a go-live acceptance item. A wet exit
+      criterion would have been worse than the one Phase 2 already has: Phase 2
+      waits on tooling that can be built, while "an event has not occurred" is a
+      status no phase can engineer, and it carried no owner ask.
+    - **The offline-test guard did not close the network.** An adversary
+      demonstrated the bypass: the SDK's HTTP client trusts the environment, so
+      with `HTTPS_PROXY` set the only socket it opens is to a loopback proxy —
+      which the guard is *required* to allow for the migration-runner's local
+      Postgres — and the request reaches the live API anyway. Round 3 closed the
+      proxy instance; **round 4 showed that was patching an instance of a
+      general defect.** `/etc/hosts`, a profile's `resolved_base_url`, an ssh
+      tunnel and `socat` are the same hole, and enumerating them is unbounded:
+      an allow-rule keyed on "loopback" cannot express "nothing reaches the
+      vendor API". The spec now makes the allow-rule destination-specific and
+      adds a second seam that does express it — an autouse fixture that refuses
+      construction of a real client unless a test opts in — with the socket
+      layer as defence in depth. Round 4 also found the credential half was
+      derived from an incomplete resolution order in `secrets.md` (three steps
+      documented, five in the installed SDK), that *clearing* `ANTHROPIC_BASE_URL`
+      hands the destination to a profile rather than pinning it, and that an
+      in-process socket patch does not inherit into the subprocesses the
+      migration tests spawn.
+    - **The rewritten assertion message claimed a pin the test did not have.**
+      It said the boundary was pinned "in either direction". Measured: lowering
+      `probation_hard_commit_seconds` from 90 to 5 — committing unclear callers
+      *sooner*, the direction that baits more real people — left the suite
+      green. That is the same behaviour this change set flags as the unresolved
+      broad reading of the owner's reply, so the gap and the ambiguity were the
+      same hole. Round 3's fix — a second test for the lower edge — was itself
+      two-thirds wrong, and **round 4 found all three faults**:
+      - Its authored failure message was **dead text under every input**.
+        `UNCLEAR` is not in `BAITABLE_TRIAGE`, so from `ASSESSING` the only
+        route to baiting is the boundary; reaching it at 75s means the setup
+        guard above has already failed. The two assertions were mutually
+        exclusive, and the whole test collapsed into its own threshold check.
+        The behavioural assertion is now on the *phase* — `is ASSESSING`, not
+        `not baiting`, which every terminal phase also satisfies — and the guard
+        carries its own message.
+      - The pair pinned a **default no shipped path reads**. Production takes
+        `Settings.probation_hard_commit_seconds`, which `build_conversation`
+        passes through; `make_director` builds a `PersonaDirector` directly and
+        reads *its* default. Two independent literals, nothing tying them, so
+        `PROBATION_HARD_COMMIT_SECONDS=5` left the suite green — measured.
+      - The docstring claimed "the pair fails on either move", true only of the
+        test-only literal.
+      The fix deliberately does **not** pin `90.0`: the owner's decision was
+      about the behaviour, not the number, and one adversary argued
+      convincingly that adding literals to a change set whose material defects
+      were all *copies drifting* is the wrong instinct. The boundary tests keep
+      reading the boundary off the object — so a retune does not trip them — and
+      one equivalence test in `test_config.py` pins that the two defaults have
+      not diverged, with no new literal anywhere.
+    - Plus: open decision 5 asserted the adversary was "bounded by nothing"
+      (`HARD_CALL_CAP_SECONDS` and `max_tokens=400` bound it, and the estimate
+      is now given so the figure is answerable); decision 6 listed one block
+      cause where the filter has six, omitting `OWNER_PII` — the owner's real
+      identity — and `SCANNER_ERROR`; and the timeout/error paths abandon the
+      stream without flushing its buffer, so delta capture would newly persist
+      raw *unvetted* text too, a worse category than the blocked sentence.
+- **Red-proof (three mutations, over `test_call_scripts.py` + `test_config.py`,
+  133 tests).** Run under the cache-clearing procedure above:
+  - `PersonaDirector.probation_hard_commit_seconds` 90.0 → **5.0** (the unsafe
+    direction): `..._still_on_probation_before_it_expires` fails **and** the
+    drift guard fails — 2 failed / 131 passed. Before this task, that mutation
+    was silent in both files.
+  - 90.0 → **200.0** (the safe direction):
+    `..._committed_once_probation_expires` fails and the drift guard fails —
+    2 failed / 131 passed.
+  - `Settings`' default 90 → **45**, drift only: **only** the drift guard fails
+    — 1 failed / 132 passed. The boundary tests correctly do not see it, which
+    is the separation the design intends: they pin behaviour at whatever the
+    boundary is, and the config test pins that there is one boundary.
+  - Restored: 133 passed, `git diff --stat ssscammers/` empty.
+- **Refuted in writing, not silently dropped.**
+  - *"The Phase 5 criterion pre-decides the raw-delta question."* It constrained
+    the caller side and the timing source only, so an owner answer of "yes,
+    persist deltas" left it satisfiable.
+  - *"The escalation claims media spend is uncapped."* The sentence read
+    "uncapped by anything **except** `daily_minutes_cap` and the estimated-rate
+    spend cap" — it named both caps as the exceptions. The residue was real and
+    adopted: the numbers were missing, and the estimate-vs-measurement gap is
+    scheduled work, not an owner question.
+  - *"The surviving model prefix on a blocked turn is replayable output, so the
+    weak-gate recommendation understates what is available."* It is not:
+    `turns.text` is post-splitter and post-join, and `RecordedTurn.deltas` are
+    kept raw precisely so the splitter is re-run. A boundary bug is exactly what
+    a recording of already-split output would hide.
+  - *"`plan.md`'s `goldens/legit/` corpus is a third superseded site."* A
+    different thing — consented real audio for false-positive measurement,
+    already rescoped to decision-layer replay by Rescope 6, with its
+    decision-layer equivalent shipped as T2.6's misroute gate.
+  - *"`plan.md` should amend its milestone text in place, as `roadmap.md` does."*
+    `plan.md` supersedes in its header preamble by its own convention — M2's
+    barge-in is handled the same way and its milestone text is likewise
+    untouched. Following the file's convention is not a defect.
+  - *"The Phase 2 heading contradicts the checklist."* The "except the LLM
+    adversary" clause reconciled them. Rewritten anyway: the heading is the
+    greppable status token and "COMPLETE" should not appear on a phase with an
+    open criterion. This entry is filed under Phase 2 close-out for the same
+    reason — filing it under a "Phase 3 — IN PROGRESS" heading would have
+    stamped monitor work as underway before a line of it exists.
+  - *"This entry is too long for a task with no production code."* Measured
+    against its neighbours the premise fails: T2.8 is 270 lines and this is
+    under half of it. The related proposal — cut the per-round summaries because
+    the drafts they describe were never committed — was declined for a stated
+    reason: Rule 1 requires reporting what each adversary found and what
+    survived, and those summaries are the only record of it. Describing
+    uncommitted drafts *by outcome* is exactly the compromise the "no
+    unverifiable quotes" rule already settled on.
+  - *"Pin the boundary with literal `== 90.0` assertions in three places."*
+    Declined, and the counter-argument is recorded because it is the better
+    one: the material defects in this very change set were all copies of a fact
+    drifting, so adding two more copies of `90` is the wrong instinct; and the
+    owner decided the behaviour, not the number, so freezing it would encode
+    authority never given. The equivalence assertion achieves the same
+    protection with no new literal. The deeper fix — deleting
+    `PersonaDirector`'s duplicate default so `Settings` is the single source —
+    touches production code and is left for a task that owns it.
+  - *"An explicit `api_key=` kwarg is a live bypass of the guard's credential
+    half."* Not on the shipped path: `config.py` sources the key from the
+    environment and `llm.py` passes that value through, so poisoning the
+    variable poisons the argument. The narrower true case — a test hardcoding a
+    literal — is closed by the client-construction seam, and the spec now says
+    so rather than resting on the env half alone.
+  - *"`GoldenManifest.idle_seconds` already injects a non-uniform caller gap."*
+    It does not: it is applied once, after all lines, and only the dead-air
+    golden uses it. The conclusion it was offered for still holds by a different
+    route — `Session.idle` takes an arbitrary float — which is what the fix
+    relies on.
+- **Escalations (Rule 1 resolution 3).** Four owner questions, recorded in
+  `roadmap.md`'s open-decisions list rather than only here: the adversary's
+  spend ceiling (5), whether raw pre-filter model output may be persisted (6),
+  which reading of "turn an unclear caller to batiing" was meant (7, listed
+  because it was resolved by default rather than asked), and authorizing a first
+  live inbound call plus the `at_seconds` column it needs (8).
+- **One process failure worth recording.** Round 3's "six defects" miscount was
+  reported by round 4 as having been *silently dropped* — present in neither the
+  fix narration nor the refutation list. That is the one thing Rule 1 names
+  explicitly as forbidden, and it happened here. Counts are corrected above and
+  the finding is recorded rather than quietly fixed, because a dropped finding
+  that gets fixed still means the gate leaked.
+- **Where the review stopped, and why.** Four rounds. Round 4's findings were
+  still substantive — a dead assertion message, a default no shipped path reads,
+  a guard spec patching instances of a general defect — so this did not
+  converge on trivia; it stopped because every surviving finding was resolved
+  and the remaining work is Phase 3's own. Any later round should start from the
+  Phase 3 guard spec, which is the newest and least-exercised text here.
+- **Verification (final tree):** 952 passed / 16 skipped (950 + the boundary
+  test + the default-drift test); textloop dry exit 0; `ruff check .` clean;
+  `git diff --stat ssscammers/` empty — no production code changed.

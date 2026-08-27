@@ -26,14 +26,47 @@ only in code.
 
 ## Anthropic specifically
 
-`ANTHROPIC_API_KEY` may be left empty. The SDK resolves credentials in order — the env
-var, then `ANTHROPIC_AUTH_TOKEN`, then an `ant auth login` profile — so a developer
-who has logged in needs no key in their environment at all.
+`ANTHROPIC_API_KEY` may be left empty. The SDK resolves credentials in order, first
+match winning — so a developer who has logged in needs no key in their environment at
+all. The full order matters to anything trying to keep a process *off* the API, so it is
+written out rather than summarised:
+
+1. **Explicit constructor arguments** (`api_key=`, `auth_token=`, `credentials=`,
+   `config=`, `profile=`). When any is passed, environment variables are not consulted
+   for credentials at all.
+2. `ANTHROPIC_API_KEY`, then `ANTHROPIC_AUTH_TOKEN`.
+3. `ANTHROPIC_PROFILE`.
+4. Workload-identity federation variables (`ANTHROPIC_IDENTITY_TOKEN[_FILE]`,
+   `ANTHROPIC_FEDERATION_RULE_ID`, `ANTHROPIC_ORGANIZATION_ID`).
+5. The active on-disk profile.
+
+A set `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` takes precedence over 3–5, which is
+why poisoning those two is sufficient against a profile. It is *not* sufficient against
+step 1 — a call site passing a literal never reads the environment. This agent's own
+call site is safe on that count, because it sources the key from the environment and
+passes it through, so a poisoned variable becomes the poisoned argument.
+
+The Bedrock, Vertex, and other cloud client variants the SDK exports consult none of
+these — they use the AWS and GCP credential chains and the cloud metadata endpoint at
+`169.254.169.254`.
 
 The trap worth knowing: **an exported `ANTHROPIC_API_KEY` silently overrides every
 profile**, including an empty one. If requests are hitting an org you did not expect,
 check `ant auth status` before debugging anything else, and unset the variable rather
 than blanking it.
+
+Several more variables reach the wire without touching a credential, and they are easy
+to miss when trying to keep a process *off* the network — all of them matter to the
+offline-test guard Phase 3 builds. **`ANTHROPIC_BASE_URL`** redirects every request;
+note that *clearing* it does not pin the destination, because base-url precedence runs
+constructor argument → this variable → the profile's own `resolved_base_url`, so an
+on-disk profile decides once the variable is gone. **`HTTP_PROXY` / `HTTPS_PROXY` /
+`ALL_PROXY`** (and their lowercase forms) are honoured, because the SDK's HTTP client
+trusts the environment: with a proxy set, the only socket the SDK opens is to the proxy
+— often on loopback — and the request still reaches the API. **`ANTHROPIC_CUSTOM_HEADERS`**
+is read from the environment on every request. A network guard that allows loopback and
+ignores these blocks nothing on a machine running mitmproxy or a corporate proxy, while
+reporting itself satisfied.
 
 ## Owner PII is a secret too
 

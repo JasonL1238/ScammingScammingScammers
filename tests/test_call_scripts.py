@@ -109,9 +109,11 @@ class TestRealPeopleAreAlwaysReleased:
     callers. And **every script states its business within two turns**, which
     means the matrix never reaches the probation hard-commit boundary at 90s —
     a real caller who rambles that long *is* committed to baiting today. That
-    gap is pinned below, and escalated in `docs/execution-log.md`; the roadmap
-    schedules the corpus growth (soft-spoken elderly callers, scripted-sounding
-    wrong numbers) for Phase 10, before anything increases call volume.
+    gap is pinned below, and the owner settled it on 2026-08-26: crossing the
+    boundary may commit an unclear caller (see `docs/execution-log.md`). The
+    roadmap schedules the corpus growth (soft-spoken elderly callers,
+    scripted-sounding wrong numbers) for Phase 10, before anything increases
+    call volume.
     """
 
     @pytest.mark.parametrize(("script", "persona_id", "forwarded"), MISROUTE_CASES, ids=MISROUTE_IDS)
@@ -170,26 +172,80 @@ class TestTheProbationBoundaryIsTheKnownGapInTheGate:
 
     This test asserts today's behavior rather than the behavior we might want,
     so that changing it is a visible decision rather than a silent drift. The
-    open question — whether probation expiry may commit an unclear caller at
-    all — is recorded for the owner in `docs/execution-log.md`.
+    owner decided on 2026-08-26 that probation expiry *may* commit an unclear
+    caller, so this is settled behavior and not a pending question; Phase 10
+    revisits it with a mid-call posterior. See `docs/execution-log.md`.
+
+    **Both edges are pinned, and what that does *not* cover is stated here.**
+    An earlier version asserted only that the boundary has been crossed by
+    125s, which catches a boundary moved *later* — the safe direction — and was
+    silent on one moved *earlier*, the direction that baits more real people.
+
+    These two tests pin the *behaviour at whatever the boundary is*: they read
+    ``probation_hard_commit_seconds`` off the director rather than assuming a
+    number, so a deliberate retune does not trip them and a broken relationship
+    does. They therefore cannot see an operator setting
+    ``PROBATION_HARD_COMMIT_SECONDS=5`` in the environment — that is a config
+    choice, recorded as the known unvalidated gap in ``test_config.py``, which
+    also pins that the two *defaults* have not drifted apart.
     """
+
+    LINE = "Sorry, hello? I can't hear you very well, could you speak up?"
+
+    def _ramble(self, director: PersonaDirector, turns: int) -> float:
+        """Talk for ``turns`` turns without tripping a single legitimacy signal."""
+        elapsed = 0.0
+        for _ in range(turns):
+            elapsed += SECONDS_PER_TURN
+            director.handle_caller_turn(self.LINE, elapsed_seconds=elapsed)
+        return elapsed
 
     def test_an_unclear_caller_is_committed_once_probation_expires(self) -> None:
         d = make_director()
-        d.opening()
-        elapsed = 0.0
-        for _ in range(5):
-            elapsed += SECONDS_PER_TURN
-            d.handle_caller_turn(
-                "Sorry, hello? I can't hear you very well, could you speak up?",
-                elapsed_seconds=elapsed,
-            )
+        elapsed = self._ramble(d, 5)
+        assert elapsed > d.state.probation_hard_commit_seconds, "setup: past the boundary"
         assert d.triage.result().triage is TriageClass.UNCLEAR
         assert d.state.baiting, (
-            "probation no longer commits an unclear caller — a deliberate change "
-            "to the FPR posture; update the escalation in docs/execution-log.md"
+            f"an unclear caller is no longer committed by {elapsed:.0f}s — the "
+            "boundary moved later, or expiry no longer commits at all. Both are "
+            "deliberate FPR-posture changes and the second reverses the owner's "
+            "2026-08-26 decision. Record which, in a NEW dated entry in "
+            "docs/execution-log.md — never in the verbatim owner-reply section, "
+            "which is a primary source and must not gain later decisions"
         )
         assert any(t.trigger.value == "probation_expired" for t in d.state.history)
+
+    def test_an_unclear_caller_is_still_on_probation_before_it_expires(self) -> None:
+        """The other edge: the gap must not be allowed to widen silently.
+
+        Lowering ``probation_hard_commit_seconds`` baits real callers *sooner*,
+        which is the change this class exists to make visible and the one the
+        test above cannot see.
+
+        The assertion is on the *phase*, not on ``baiting``. An earlier version
+        asserted ``not d.state.baiting``, which is satisfied by every terminal
+        phase as well — and, worse, was unreachable: ``UNCLEAR`` is not in
+        ``BAITABLE_TRIAGE``, so the only route to baiting here is the boundary,
+        and reaching it means the setup guard above has already failed. The
+        whole test collapsed into its own guard.
+        """
+        d = make_director()
+        elapsed = self._ramble(d, 3)
+        boundary = d.state.probation_hard_commit_seconds
+        assert elapsed < boundary, (
+            f"setup no longer lands inside probation: {elapsed:.0f}s against a "
+            f"{boundary:.0f}s boundary. Either the boundary moved earlier — the "
+            "unsafe direction, which baits real callers sooner than the owner's "
+            "2026-08-26 decision contemplated — or SECONDS_PER_TURN changed. "
+            "Record which before changing it"
+        )
+        assert d.triage.result().triage is TriageClass.UNCLEAR
+        assert d.state.phase is CallPhase.ASSESSING, (
+            f"an unclear caller left probation by {elapsed:.0f}s, before the "
+            f"{boundary:.0f}s boundary. If the phase is a baiting one the commit "
+            "bar has been lowered; if it is terminal the caller was released "
+            "early. Both change the FPR posture and both need recording"
+        )
 
 
 class TestAdversarialCallers:

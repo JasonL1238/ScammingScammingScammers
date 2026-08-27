@@ -35,7 +35,7 @@ Every open item from the survey of the repo, lettered so phases can reference th
 | H | Screening v2 (M3), rescoped to Twilio | deterministic triage only |
 | I | Strategy engine (M4) | static YAML tactic weights; frustration machinery tested but unreachable |
 | J | Intelligence layer (M5), rescoped to the legal boundary | nothing built |
-| K | Quality-bar infrastructure — replay, goldens, latency SLO, chaos, OTel | test suite is strong; push-gating CI landed at T1.1 — still no replay of recorded calls, no golden gates |
+| K | Quality-bar infrastructure — replay, goldens, latency SLO, chaos, OTel | test suite is strong; push-gating CI landed at T1.1 and byte-identical golden replay at T2.8 — still no replay of a *captured* call (deferred to Phase 5), no latency SLO, no chaos suite, no OTel |
 
 ## Honest rescopes and escalations
 
@@ -216,9 +216,13 @@ persisted-shape authorization is needed.
 - Golden manifests **extend `CallerScript`** rather than inventing a parallel shape,
   pin the fiction `pack_version` (golden transcripts break if the pack regenerates),
   and record per-turn timing; a replay runner re-drives `Conversation` from a recorded
-  event log and diffs the produced stream byte-for-byte. Replay must reproduce **tick
-  cadence** (hold-vs-dead-air behavior is cadence-sensitive) and drive **both** time
-  injections coherently — the monotonic clock and `DailyLedger`'s civil date.
+  **model stream** and diffs the produced stream byte-for-byte. Replay must reproduce
+  **tick cadence** (hold-vs-dead-air behavior is cadence-sensitive) and drive **both**
+  time injections coherently — the monotonic clock and `DailyLedger`'s civil date.
+  *(Corrected 2026-08-26: this bullet said "from a recorded event log". T2.7 proved
+  the event log is not a sufficient replay source — it holds post-filter speech, while
+  a recording holds the raw deltas the sentence splitter must be re-run over. The
+  shipped design replays from a `CallRecording`, not from the log.)*
 - Consolidate the two fake clocks (`tests/helpers.FakeClock`,
   `textloop.SimulatedClock`) into one — `CLAUDE.md` forbids a third.
 - Convert the four prose-only adversarial pass criteria in
@@ -235,14 +239,42 @@ persisted-shape authorization is needed.
   engagement metric (`plan.md` quality bar #4). Scripted callers remain the
   deterministic merge gate; the adversary is the trend signal. Adversary transcripts
   are data, never instructions, like every other caller input.
+  **Not built as of 2026-08-26** — this is the one Phase 2 key move still outstanding,
+  and it stays this phase's, not a later one's. See the note under the exit criteria and
+  open decision 5 for what it is actually waiting on.
 
-**Exit criteria.** A recorded call replays byte-identically in CI (events, seq,
+**Exit criteria.** A **synthesized** call replays byte-identically in CI (events, seq,
 payloads, transcript). Misroute FPR=0 becomes a merge-blocking gate (all misroute
 scripts × all personas × both entry paths, release within two turns). A
 deliberately-broken persona fails the new adversarial predicates (red-test proof).
 Exactly one fake clock exists. The LLM adversary reports mean simulated time-on-call,
 recording the baseline against which M2's ≥3-minute criterion and Phase 11's
 pre-registered margin are judged.
+
+> **Amended 2026-08-26 by owner decision** (raised at T2.8): the first criterion read
+> "a **recorded** call". No recorder exists in this phase, so a golden expresses
+> per-turn timing as a *rule* rather than as captured data, and a call with the uneven
+> gaps that reach dead air naturally cannot be expressed. Capture-and-replay moves to
+> Phase 5, which gains both a key move and an exit criterion for it. The mechanism this
+> phase built is unchanged and mutation-proven; only the corpus is synthetic, and the
+> criterion now says so.
+>
+> **The LLM-adversary criterion is open, and this phase stays open with it.** What it is
+> waiting on, stated precisely because two earlier drafts of this note got it wrong: not
+> a key, and not "no wet run has happened" — that is the criterion's *status*, not a
+> cause, and writing a non-event in as a blocker is what makes a criterion read as
+> unclosable. **One thing is open: an authorized spend ceiling.** The owner's 2026-08-26
+> reply gave a cost *disposition* ("api budget is not as bad for llm"), which names no
+> figure and authorizes no run. The adversary itself is buildable and dry-testable
+> offline today; only the baseline run it must produce needs the figure. That ask is
+> open decision 5. (Scheduled-CI delivery additionally needs a repository secret — a
+> delivery mechanism, not a gate on the criterion.)
+> The work is **not** relocated to a later phase: Phase 11's
+> M4 exit ([`plan.md`](plan.md) M4) consumes the baseline and is the gate that already
+> fails without it, and moving a blocked deliverable in front of an unrelated phase would
+> stop that phase for a reason that has nothing to do with it. Ordering the adversary
+> after Phase 3 follows the owner's "proceed to phase 3" and is otherwise this plan's own
+> choice, not an owner instruction about the adversary.
 
 ### Phase 3 — MONITOR watchdog layer *(E)*
 
@@ -278,13 +310,77 @@ does not wait for persistence.
   verdict-enum-to-SQL decision deferred to Phase 5 with a written note (the Phase 1
   runner already exists if a review cascade forces it early).
 
+**Cost and testability constraints** *(added 2026-08-26)*. The monitor is the first
+component that spends model tokens on every turn of every call, so it is built cheap by
+construction: a small model and a **bounded excerpt** rather than the whole transcript.
+Fixed-script turns are not classified — note this is a *narrower* rule than "skip
+anything `scripted=True`", because the neutral greeting
+([`persona_director.py`](../ssscammers/agent/persona_director.py)'s
+`NEUTRAL_GREETING`, marked scripted where `Conversation.open` records it) also carries
+that flag, while the carve-out above names only disclosure, victim warning, and
+911. **Sampling is not an allowed economy** — a per-turn guardrail evaluated on a sample
+is not equal safety, and under the fail-open polarity above an unsampled turn and a
+timed-out turn are indistinguishable, so the miss rate stops being measurable.
+
+- **Build the offline-test guard.** Monitor tests must run with no key and no network,
+  and nothing enforces that today: `tests/conftest.py` is a `sys.path` insert and one
+  fixture, with no socket guard and no key guard, so a test can reach a live endpoint
+  against ambient credentials. The guard is autouse and session-scoped, and has two
+  halves that are each insufficient alone:
+  - *Credentials.* Poison `ANTHROPIC_API_KEY` **and** `ANTHROPIC_AUTH_TOKEN`, and
+    **pin** `ANTHROPIC_BASE_URL` rather than clearing it — clearing only hands the
+    decision to an on-disk profile's `resolved_base_url`, which is next in precedence.
+    Poisoning the key alone is not enough: [`secrets.md`](secrets.md) now records the
+    SDK's full resolution order, which includes `ANTHROPIC_PROFILE`, workload-identity
+    federation variables, and the on-disk profile. Note the limit of this half — it
+    binds only call sites that read credentials from the environment. Production does
+    ([`config.py`](../ssscammers/shared/config.py) sources the key from the env and
+    `llm.py` passes it through), so poisoning the env poisons the explicit kwarg too;
+    a test hardcoding a literal key is not covered, which is what the client-construction
+    seam below exists for.
+  - *Network.* The property wanted is **"nothing reaches the vendor API"**, and the
+    obvious spelling — "block non-loopback, allow loopback" — does not express it. The
+    carve-out exists because the migration-runner legs need a real local Postgres and
+    CI's Postgres service is on `localhost`, and it is wide enough to drive through:
+    with `HTTPS_PROXY` set, the only socket the SDK opens is to a proxy on loopback and
+    the request reaches the live API anyway (measured). Clearing the proxy variables
+    closes that *instance*; `/etc/hosts` pointing `api.anthropic.com` at 127.0.0.1, an
+    on-disk profile's `resolved_base_url`, an ssh tunnel, or `socat` are the same hole
+    wearing different clothes, and enumerating instances is unbounded. So: make the
+    allow-rule **destination-specific** — loopback permitted only on the declared
+    Postgres port — and treat the socket layer as defence in depth behind a second seam
+    that does express the property: **an autouse fixture that makes constructing a real
+    `anthropic` client raise unless a test opts in.**
+  - *Also name these, because a guard that misses them reports a false pass.* Link-local
+    counts as non-loopback (`169.254.169.254` is the cloud metadata endpoint the
+    Bedrock/Vertex client variants reach for, and none of those consults
+    `ANTHROPIC_API_KEY` at all). `NO_PROXY` is harmless while proxies are *cleared* and
+    becomes the hole the moment anyone "improves" the guard by setting a black-hole
+    proxy instead. `AF_UNIX` connect takes a path, not a `(host, port)` tuple, so the
+    guard must say which address families it inspects. DNS resolves off-box regardless,
+    which is not a spend vector but shapes what the red-proof's failure looks like. And
+    the socket patch is in-process: it does not inherit into the subprocesses
+    `test_migration_runner.py` spawns, so only the credential half covers those.
+
 **Exit criteria.** A fake classifier flagging a scripted persona break reaches
 `DISCLOSE_EXIT`/`TERMINATE` within one turn of the verdict via the tick path. A hung
 classifier leaves calls unchanged with turn latency within the pre-monitor bound
 (injected-slow-monitor test). The adversarial injection scripts fail the release gate
 when the persona complies. `kill(call_sid)` ends a live simulated call with the slot
 released through two-phase finish/release. The disclosure and 911 scripts are provably
-never suppressed by any verdict.
+never suppressed by any verdict. **The offline-test guard bites:** a deliberately seeded
+monitor test that constructs a real client and calls the live endpoint fails on the
+guard's error, red-proved on a throwaway branch with the run URL recorded, and passes
+only once re-pointed at the fake. The guard is autouse, so it covers every in-process
+CI leg by construction — the artifact to demonstrate is the seeded regression going red,
+not a separate guarded leg. The red-proof must be run **with `HTTPS_PROXY` set**, since
+that is the configuration in which a guard missing the proxy half reports a false pass.
+*(Stated
+as an artifact and a seeded regression on purpose. An earlier draft of this phase said
+"the whole suite passes with `ANTHROPIC_API_KEY` set to a poison value and outbound
+sockets blocked", which was measured to be **already true** on the pre-Phase-3 tree —
+950 passed / 16 skipped, byte-identical to baseline, none of the skips key-gated. A
+criterion that is green before the phase starts is not a gate.)*
 
 ### Phase 4 — Cancellation-safe turn executor *(F, part one)*
 
@@ -338,6 +434,57 @@ verdicts exist to persist from day one (Phase 3).
   explicit migration-impact note; the `DailyLedger` file stays **authoritative for
   admission** (fail-closed, no query on the call path) with async replication to
   `metrics_daily` for the dashboard only.
+- Build the **call recorder** deferred here from Phase 2 (owner decision, 2026-08-26),
+  which is a narrower thing than "record a call" and must be written as such. A golden
+  has two sides and they capture differently:
+  - **The caller side needs a per-turn gap schedule and one schema addition.** Three
+    drafts of this bullet got the reasoning wrong in three different ways, so it is
+    stated with the measurement it rests on. In today's harness the caller's own
+    contribution to every gap is a constant: `Session.say` idles `seconds_per_turn`
+    before each line, and every `caller_turn` in the shipped goldens follows **the event
+    before it** by exactly 25.000s. The caller-to-caller spread that looks like variation
+    — 46.1, 26.0, 98.0, 59.6, 26.0 in `scam_bank_otp_baited` — is the agent's own
+    speaking and hold time, which replay already reproduces deterministically from the
+    `CallRecording`. Feeding that back as a *caller* gap would double-count it and
+    diverge the replay. So the recorder's job is to read the caller's own gaps from the
+    rows and drive them back through `Session.idle`, which already advances an arbitrary
+    float with the timer running — a per-turn gap sequence on the manifest in place of
+    the `seconds_per_turn` scalar, **not** a new field on `CallRecording` (that type is
+    the *model* side, holds no timing, and is what both replay depths run their cursor
+    over). And `call_events` as shipped cannot carry those gaps: it stores
+    `ts timestamptz`, stamped by the sink in wall-clock time, while replay drives a
+    monotonic elapsed — `CallEvent.at_seconds` exists on the object but is **not a
+    `call_events` column**. Adding it is a persisted-shape change needing the
+    migration-impact note and sign-off open decisions 2 and 3 describe; the column shape
+    itself has precedent in the same migration (`triage_observations.at_seconds`).
+    Sub-turn timing — a caller pausing mid-sentence — needs the `turns` media-plane
+    columns (`audio_start_ms`, `audio_end_ms`, `stt_confidence`), which have **no
+    producer anywhere in the codebase**; Rescope 6 above schedules that producer for
+    **Phase 7**, so sub-turn fidelity is Phase 7's.
+  - **The model side cannot be captured from persisted rows, and may not be worth
+    making capturable.** `RecordedTurn.deltas` are raw API chunks kept raw so the
+    sentence splitter is *re-run* rather than trusted; `turns.text` is one finished,
+    post-splitter, post-join string, so it cannot drive a faithful model replay however
+    it is stored. Capturing deltas needs a schema addition — a persisted-shape change
+    requiring a migration-impact note and owner sign-off — **and** a decision the owner
+    has not made. State the safety half precisely, because two looser versions were
+    wrong. Nothing persists a `turns` row **today** — the only `INSERT` in the package
+    is into `schema_migrations` — so this phase is not adding one string to an existing
+    exposure; it is starting the exposure, and the real question is how much model
+    output should be written at all. Once it is written, a filtered turn's `text` will
+    hold the model's *surviving* sentences with a fumble in place of the blocked one
+    (joined and committed once at the end of the turn — per-sentence commit is Phase 4's
+    work). Against that baseline, delta capture newly writes two things, not one:
+    **the blocked sentence** — the string the pre-TTS filter exists to destroy, carrying
+    whichever of the six block causes fired, which includes the owner's real identity
+    (`OWNER_PII`) and text the scanner never vetted at all (`SCANNER_ERROR`), not only a
+    card or SSN — and **the un-flushed tail of every timed-out or errored turn**, since
+    a stream abandoned mid-flight never flushes its residual buffer, so that text is
+    never scanned and never reaches `text`. The second category is the worse of the two:
+    the blocked sentence was at least seen by the filter. The recommendation on file is
+    therefore to keep the model side authored and have a captured golden assert the
+    *filter verdict* on a blocked turn — a weaker gate, honestly labelled, rather than
+    a stronger one that undoes a CODE guardrail. Open decision 6.
 - Resolve the deferred Phase 3 decision: persist monitor verdicts and promote the
   filter's `Violation` kinds into the mirrored-SQL-enum regime via the runner — a
   persisted-shape addition requiring an explicit migration-impact note and owner
@@ -352,8 +499,28 @@ verdicts exist to persist from day one (Phase 3).
   memory; the DB never enters the admission path.
 
 **Exit criteria.** A simulated call's rows in `calls`/`call_events`/`turns` exactly
-match the in-memory stream, and a call replayed **from its persisted rows** is
-byte-identical to its live stream. Postgres down mid-call: the call completes normally
+match the in-memory stream, and a call replayed **from its persisted rows plus its
+recorded model stream** is byte-identical to its live stream. *(Clarified 2026-08-26:
+this read "replayed from its persisted rows", which the T2.7 finding above makes
+ambiguous — `turns.text` is post-splitter and cannot drive the model side. The rows
+supply the caller turns, the timing, and the seed; the model side comes from a
+`CallRecording`, as it does everywhere else in this codebase.)* **A call whose
+caller-side inter-turn gaps are non-uniform is captured to persisted rows and replays
+byte-identically, with the gaps read back from those rows** — driven through `Session`
+by an explicit per-turn gap schedule, and red-proved by reverting the reader to
+`seconds_per_turn` and watching it diverge. That is the obligation Phase 2's amendment
+moved here and the one criterion that fails if the recorder is not built. It is
+deliberately **dry and closable by engineering alone**: an earlier draft made it wet —
+"one real inbound call" — on the theory that nothing synthetic could produce non-uniform
+caller gaps, which the key move above disproves (`Session.idle` already advances an
+arbitrary float). A wet criterion would have been worse than Phase 2's blocked one:
+Phase 2 waits on tooling that can be built, while "an event has not occurred" is a
+status no phase can engineer, and it carried no owner ask. Capturing an *actual* inbound
+call is open decision 8 — a go-live acceptance item, not a gate on this phase. This
+criterion still depends on persisting `CallEvent.at_seconds`, which is not a
+`call_events` column today; that is open decision 2/3's class of sign-off. Sub-turn
+timing is out of scope here and lands with Phase 7's media seam. Postgres down mid-call:
+the call completes normally
 with bounded, counted loss and unchanged latency (chaos test). The runner applies
 migrations on fresh and existing volumes. Duplicate Twilio webhook deliveries produce
 no duplicate rows. A recording-status callback arriving after slot release still
@@ -631,8 +798,9 @@ gate remain green across the full stack.
 
 ## Open decisions for the owner
 
-These are the roadmap's named escalations — each blocks only its own phase, and each
-carries a recommendation rather than a shrug:
+These are the roadmap's named escalations. Each carries a recommendation rather than a
+shrug. Most block only their own phase; **decision 5 is the exception** — it holds Phase
+2's last exit criterion open and Phase 11's M4 exit depends on the same number:
 
 1. **Voiceprints (Phase 12).** Recommendation: keep `legal.md`'s boundary; ship
    non-biometric linking.
@@ -643,3 +811,51 @@ carries a recommendation rather than a shrug:
 4. **The `[LAWYER]` items in [`legal.md`](legal.md).** Phase 12's export redaction
    implements the current answer; the checklist stays open until answered by someone
    qualified.
+5. **What may the LLM adversary spend? (Phase 2, and Phase 11's M4 exit.)** *Raised
+   2026-08-26.* Not a credentials question — a developer host may already have a key
+   configured, and `ANTHROPIC_API_KEY` is only one of the ways the SDK resolves one
+   ([`secrets.md`](secrets.md)). What is missing is an authorized figure. The 2026-08-26
+   reply gave a disposition ("api budget is not as bad for llm") and no number.
+   **Recommendation:** name a ceiling for the first baseline run, and it gets built and
+   run against it. The scale is estimable rather than open-ended, so this is answerable
+   without guessing: a run is *N* scripted calls; each call is bounded by
+   `HARD_CALL_CAP_SECONDS=5400`, and each persona turn by `llm.py`'s `max_tokens=400`,
+   against 5 shipped `SCAM_SCRIPTS`. A figure for *N* and a dollar ceiling are enough.
+   Until then Phase 2's fifth criterion stays unchecked. Two things to know when
+   answering: the *telephony* caps (`DAILY_MINUTES_CAP=360`, `DAILY_SPEND_CAP_USD=50`)
+   are separate and do not bound the adversary; and the key move specifies the adversary
+   as a **scheduled CI job**, for which no repository secret is wired today — so a
+   figure unblocks the build, and CI delivery needs a secret provisioned separately.
+6. **May raw, pre-filter model output be persisted? (Phase 5.)** *Raised 2026-08-26.*
+   Nothing writes a `turns` row today, so Phase 5 does not add to an existing exposure —
+   it starts one, and the question is how much model output to write at all. Capturing
+   for replay wants the raw deltas, which newly write two things the system currently
+   destroys: the sentence the pre-TTS filter blocked (carrying whichever of its six
+   causes fired — including the owner's real identity, not only a card or SSN), and the
+   un-flushed tail of any timed-out or errored turn, which the filter never scanned at
+   all. **Recommendation:** do not persist deltas; capture the caller side and the
+   timing, keep the model side authored, and let a captured golden assert the *filter
+   verdict* on a blocked turn. Same genre as decisions 2 and 3, and it decides the
+   recorder's scope. See Phase 5's recorder key move for the full reasoning.
+7. **Was "turn an unclear caller to batiing" the narrow reading or the broad one?**
+   *Raised 2026-08-26, and answered narrowly by default.* Taken as "let the 90-second
+   probation boundary stand", which is what the question asked. The broad reading —
+   route UNCLEAR callers to baiting outright — would commit on the first turn instead,
+   a far larger FPR change catching exactly the slow, confused caller the boundary
+   exists to protect. **Recommendation:** keep the narrow reading. Listed here because
+   it is the highest-FPR-risk item on this list and was resolved without asking. Both
+   edges of the boundary are now pinned by test — at whatever the boundary is, rather
+   than at ninety seconds, so a retune stays possible — and a separate test pins that
+   the director and settings defaults have not drifted apart. What no test covers, by
+   design, is an operator setting `PROBATION_HARD_COMMIT_SECONDS` in the environment;
+   that is a config choice, and `test_config.py` records it as the known unvalidated
+   gap.
+8. **Authorize a first live inbound call, and the schema addition that captures its
+   timing? (Phase 5 → go-live.)** *Raised 2026-08-26.* Phase 5's capture criterion is
+   deliberately dry, so the phase can close on engineering alone. But a golden captured
+   from a *real* call is still the thing that proves the recorder against reality rather
+   than against a schedule we wrote. That needs a deployment answering calls, telephony
+   and model spend that decision 5 does not cover, and the `CallEvent.at_seconds`
+   column. **Recommendation:** track it as a go-live acceptance item rather than a phase
+   gate — filed here so it is a named ask rather than an unclosable criterion buried in
+   a phase, which is what an earlier draft made it.

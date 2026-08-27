@@ -11,7 +11,8 @@ import logging
 
 import pytest
 
-from ssscammers.shared.config import _env_number, _positive_rate
+from ssscammers.agent.persona_director import PersonaDirector
+from ssscammers.shared.config import _env_number, _positive_rate, load_settings
 
 CONFIG_LOGGER = "ssscammers.shared.config"
 
@@ -102,6 +103,37 @@ class TestKnownLimits:
         # baiting with no triage window) and is tracked as follow-up work.
         monkeypatch.setenv("MAX_CONCURRENT_CALLS", "-3")
         assert _env_number("MAX_CONCURRENT_CALLS", 5) == -3
+
+    def test_the_probation_boundary_has_one_default_not_two(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``PersonaDirector`` carries its own default, and nothing tied them.
+
+        ``build_conversation`` always passes the settings value through, so on
+        the production path the director's default is dead — which is exactly
+        why it can drift unnoticed. The probation tests in
+        ``test_call_scripts.py`` construct a director directly, so they read
+        that dead default: if the two diverge, those tests go on pinning a
+        number no call has ever used.
+
+        Asserted as an equivalence rather than against a literal, deliberately.
+        The owner's 2026-08-26 decision was about the *behaviour* — that expiry
+        may commit an unclear caller — not about ninety seconds, so a retune
+        must stay possible without tripping unrelated tests. This catches drift
+        between the two defaults and nothing else; an operator's deliberate
+        ``PROBATION_HARD_COMMIT_SECONDS`` override is their call, and is the
+        unvalidated gap recorded above.
+        """
+        monkeypatch.delenv("PROBATION_HARD_COMMIT_SECONDS", raising=False)
+        assert (
+            PersonaDirector.__dataclass_fields__["probation_hard_commit_seconds"].default
+            == load_settings().probation_hard_commit_seconds
+        ), (
+            "the probation boundary now has two different defaults — "
+            "PersonaDirector's and Settings'. Production reads Settings; the "
+            "probation-boundary tests read PersonaDirector's. Make them agree, "
+            "or delete the duplicate so there is one"
+        )
 
 
 class TestPositiveRate:

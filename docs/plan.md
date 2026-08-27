@@ -17,8 +17,25 @@
 > recording) are all rescoped or escalated there. Read it before working any M3–M5
 > item or the quality-bar section.
 >
-> Milestones M0–M5 still name the shape of the work, with one criterion superseded in
-> this document's own notes: **M2's barge-in**
+> Milestones M0–M5 still name the shape of the work, with **two** criteria superseded in
+> this document's own notes.
+>
+> **M0's replay exit** (`*Exit: the replay harness reproduces a recorded call
+> byte-identically.*`) and the same wording in quality-bar item 2 ("a recorded call with
+> byte-identical inputs") are **superseded**, and read here as a **synthesized** call.
+> These two lines are the ancestor of the criterion the owner amended on 2026-08-26 —
+> the amendment itself was to roadmap Phase 2's exit criterion, which is the only line
+> the owner was asked about; carrying it back here is this document's own inference, not
+> a decision made about `plan.md`. What shipped in roadmap Phase 2 is byte-identical replay of an
+> *authored* corpus: six manifests whose model side is a canned recording and whose
+> per-turn timing is a rule, not captured data. Capture-and-replay of a real call is
+> roadmap Phase 5's, with its own exit criterion there. Read those two lines as
+> "synthesized" until Phase 5 lands. (Quality-bar item 3's `goldens/legit/` corpus is a
+> *different* thing and is not affected — it is consented real audio for false-positive
+> measurement, already rescoped to decision-layer replay by the roadmap's Rescope 6, and
+> its decision-layer equivalent shipped as the misroute FPR=0 gate.)
+>
+> **M2's barge-in**
 > is deliberately disabled today (`should_interrupt=False` in
 > [`media.py`](../ssscammers/agent/media.py)). Re-enabling it without first making the turn
 > executor cancellation-safe reproduces a G-11 failure — Pipecat cancels the task running a
