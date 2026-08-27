@@ -27,10 +27,11 @@ insofar as the model has not already spent it.
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 import random
 import time
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
@@ -40,7 +41,7 @@ from ssscammers.agent.persona_director import PersonaDirector, TurnPlan
 from ssscammers.agent.state_machine import Transition
 from ssscammers.agent.triage import AllowlistCache
 from ssscammers.shared.config import Settings
-from ssscammers.shared.enums import CallPhase, EndReason, EntryPath
+from ssscammers.shared.enums import TERMINAL_PHASES, CallPhase, EndReason, EntryPath
 from ssscammers.shared.output_filter import FUMBLE_LINES, trailing_digit_run
 
 logger = logging.getLogger(__name__)
@@ -191,6 +192,7 @@ class Conversation:
     _line_busy_until: float = field(default=0.0, init=False)
     _spoken_digit_tail: str = field(default="", init=False)
     _offered_voicemail: bool = field(default=False, init=False)
+    _kill_reported: bool = field(default=False, init=False)
 
     # -- lifecycle ------------------------------------------------------------
 
@@ -294,6 +296,87 @@ class Conversation:
         """Buffer a keypress. ``5`` is the escape hatch for a real caller."""
         self._pending_dtmf += digit
 
+    def request_kill(self, *, source: str, reason: str = "", findings: Sequence[str] = ()) -> bool:
+        """Stop this call from outside the turn loop (G-17's watchdog, G-20's kill switch).
+
+        Synchronous and non-blocking on purpose. The monitor runs in its own task and the
+        kill switch arrives on an HTTP request; neither may await this object, and neither
+        may start a turn. All this does is latch — the next evaluation reads it, which is
+        the 1 Hz tick or the caller's next turn, whichever comes first, and the call ends
+        through the ordinary ``TERMINATE`` path with ``EndReason.WATCHDOG_KILL``.
+
+        The event is emitted at that evaluation rather than here, which is what keeps a
+        monitored call's event stream orderable: an out-of-band task emitting into the
+        per-call sequence would interleave differently on every run and break the replay
+        gate. A *clean* monitor therefore changes the stream not at all.
+
+        **A kill bounds the damage; it does not silence the line.** The sentence loop in
+        :meth:`_generate` checks the latch at each sentence boundary and stops there, so
+        the rest of a reply already judged unsafe is never generated — but sentences
+        already yielded are queued at the transport, and the hangup drains what is queued
+        before closing. What a kill guarantees is that nothing *further* is composed, not
+        that the caller hears nothing more.
+
+        Returns ``False`` — and changes no state — when the call has not opened yet, is
+        already over, or has already committed to an exit. A verdict landing while the
+        disclosure is being spoken must not turn it into a bare hangup; that is the
+        fixed-script carve-out, and the state machine enforces the same rule
+        independently. ``False`` is *also* returned when a kill was already latched: the
+        superseding request is recorded and logged rather than dropped, but the first one
+        stands. A caller that needs to tell those two cases apart — G-20's operator-facing
+        endpoint will — should read the log, or this should grow a richer return type when
+        that endpoint is built.
+
+        Args:
+            source: Who asked. Recorded verbatim. ``"monitor"`` is the only production
+                caller today; the kill-switch endpoint that would pass ``"kill_switch"``
+                is designed and not built.
+            reason: Free text for the log. Never spoken.
+            findings: Machine-readable verdict kinds. A bare ``str`` is rejected rather
+                than splatted into characters — it satisfies ``Sequence[str]``, no
+                typechecker runs in CI, and the resulting garbage is valid JSON, so
+                nothing downstream would ever notice.
+        """
+        if isinstance(findings, str):
+            raise TypeError(
+                f"findings must be a sequence of strings, not a bare str: {findings!r}"
+            )
+        if self._started_at is None or self._ended or self.director.state.phase in TERMINAL_PHASES:
+            logger.info(
+                "kill request from %s ignored: call has not opened or is already ending",
+                source,
+            )
+            return False
+
+        superseding = self.director.watchdog_killed
+        self.director._latch_kill(source=source, reason=reason, findings=findings)  # noqa: SLF001
+        logger.warning(
+            "kill %s by %s on call from %s: %s",
+            "superseded" if superseding else "requested",
+            source,
+            self.director.caller_number or "unknown",
+            reason or "no reason given",
+        )
+        return not superseding
+
+    async def _report_pending_kill(self) -> None:
+        """Emit the kill event once, at the evaluation that will act on it.
+
+        Called from every evaluation site — ``respond``, ``tick``, and
+        ``caller_hung_up`` — because a scammer hanging up the moment the persona breaks
+        is the *likeliest* ending for a killed call, and that was the one path where the
+        verdict used to die with the object.
+        """
+        request = self.director.kill_request
+        if request is None or self._kill_reported:
+            return
+        self._kill_reported = True
+        # Deep, not `dict(...)`. The payload's `findings` and `superseded` are lists the
+        # director still holds, and `CallEvent.payload` is that live mapping — a later
+        # request appending to `superseded` would retroactively rewrite an event already
+        # handed to the sink, which is the one thing a replayable log cannot allow.
+        await self._emit("watchdog_kill", copy.deepcopy(dict(request)))
+
     async def _drain_dtmf(self) -> str:
         """Take the buffered digits and log them at the moment they matter.
 
@@ -324,6 +407,7 @@ class Conversation:
             self._history.append(Turn("user", utterance))
 
         dtmf = await self._drain_dtmf()
+        await self._report_pending_kill()
 
         # The plan is made first so the caller_turn event can carry the verdict this
         # utterance produced — the classification and its evidence, not the stale one
@@ -359,6 +443,7 @@ class Conversation:
             return
 
         dtmf = await self._drain_dtmf()
+        await self._report_pending_kill()
         silence = self.silence_seconds
         plan = self.director.check_exits(
             elapsed_seconds=self.elapsed_seconds,
@@ -388,6 +473,7 @@ class Conversation:
         if self._ended:
             return []
         dtmf = await self._drain_dtmf()
+        await self._report_pending_kill()
         plan = self._advance("", dtmf=dtmf, caller_hung_up=True)
         actions = [action async for action in self._execute(plan)]
         if not any(isinstance(action, HangUp) for action in actions):
@@ -449,7 +535,16 @@ class Conversation:
             async for action in self._generate(plan):
                 yield action
 
-            if plan.hold_seconds:
+            # **After `_generate` returns, a killed turn produces no further audio.**
+            # That invariant lives here, in one condition, rather than as a guard on
+            # each thing that follows — because the next thing added after `_generate`
+            # should inherit it instead of needing its own. The hold is what it catches
+            # today, and the hold is the expensive case: the plan was built before the
+            # verdict, so it still carries one, and on the live path `perform` sleeps out
+            # the whole thing inside the turn lock the tick's HangUp is waiting on, while
+            # `_occupy_line` pushes the dead-air deadline out so G-16 cannot fire either.
+            # A killed call would sit there playing a kettle for up to ninety seconds.
+            if plan.hold_seconds and not self.director.watchdog_killed:
                 holds = self.director.persona.holds
                 clip = self.rng.choice(holds) if holds else None
                 if clip is not None:
@@ -479,10 +574,23 @@ class Conversation:
         failure: str | None = None
         first_sentence_ms: int | None = None
         character_pause_ms = 0
+        killed = False
 
         try:
             async with asyncio.timeout(self.generation_timeout_seconds):
                 async for sentence in self.brain.stream_reply(self._history, plan.state_note):
+                    if self.director.watchdog_killed:
+                        # A verdict landed while this reply was still streaming. Stop at
+                        # the sentence boundary, for the same reason a filter block stops
+                        # here: the rest of this reply is more of whatever was just judged
+                        # unsafe. Without this the persona finishes saying the thing it
+                        # was killed for — the tick's HangUp waits on the turn lock this
+                        # turn holds, and the hangup drains queued audio before closing,
+                        # so "the call ends within a second" was true of the state machine
+                        # and false of the caller's ears.
+                        killed = True
+                        break
+
                     if first:
                         first = False
                         first_sentence_ms = round((self.clock() - started) * 1000)
@@ -532,6 +640,24 @@ class Conversation:
         # captured before anything was yielded for this sentence.
         stream_ms = round((self.clock() - started) * 1000)
 
+        # Read the latch, not just the loop's memory of it. `killed` records whether the
+        # sentence loop happened to *observe* a verdict, which is a weaker fact than
+        # whether this call was killed — and the two diverge exactly where it matters. A
+        # verdict landing while sentence one is still forming, on a stream that then times
+        # out or raises, never re-enters the loop: the local stays False, `spoken` is
+        # empty, and the fumble below speaks a stalling line on a call already judged
+        # unsafe. The fail-soft path would defeat the guardrail.
+        killed = killed or self.director.watchdog_killed
+
+        if killed and failure is None:
+            # Labelled for the same reason "truncated" is: without it a kill-shortened
+            # turn is byte-identical in the log to a naturally short one, and the whole
+            # value of the event log is telling those apart afterwards. On a timeout or
+            # error the proximate cause is kept instead — it is the more informative of
+            # the two, and the separately-sequenced `watchdog_kill` event carries the
+            # verdict for correlation.
+            failure = "killed"
+
         if failure is None and getattr(self.brain, "last_stop_reason", None) == "max_tokens":
             # The reply was cut mid-word. Nothing raised and text did arrive, so without
             # this the event log is byte-identical to a clean turn — and the fragment is
@@ -539,9 +665,14 @@ class Conversation:
             failure = "truncated"
 
         fumbled = False
-        if not spoken:
+        if not spoken and not killed:
             # Silence is the one thing that cannot happen here — it reads as a dropped
             # call and ends the bait. A fumble is a perfectly good stalling turn.
+            #
+            # Except on a killed call, where silence is the *point*. Without the `killed`
+            # guard a verdict landing before the first sentence makes the persona speak a
+            # stalling line on a call that has just been decided unsafe — which is exactly
+            # what a watchdog kill is supposed to prevent, arriving via the fail-soft path.
             fumbled = True
             fumble = self.rng.choice(FUMBLE_LINES)
             spoken.append(fumble)
@@ -549,7 +680,11 @@ class Conversation:
 
         text = " ".join(spoken).strip()
         self._spoken_digit_tail = trailing_digit_run(text)
-        self._history.append(Turn("assistant", text))
+        if text:
+            # A killed turn can be genuinely empty. An empty assistant turn in the
+            # transcript is not merely untidy — it is a 400 from the API if the call
+            # somehow continued, and it is not a turn the persona took.
+            self._history.append(Turn("assistant", text))
         await self._emit(
             "agent_turn",
             {

@@ -7,6 +7,7 @@ them hearing something they should not. No network, no speech stack, no waiting.
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 import logging
 import random
@@ -559,6 +560,508 @@ class TestTheEscapeHatches:
         await conversation.open()
         await conversation.caller_hung_up()
         assert await conversation.caller_hung_up() == []
+
+
+class TestTheKillSeam:
+    """G-17's watchdog and G-20's kill switch, at the seam they both come through.
+
+    Nothing here is model-backed — a verdict is injected directly, because the
+    point of this seam is that *whatever* produces a verdict, the call ends
+    through the enforcement path that already exists rather than through new
+    machinery. A timer still never starts a turn.
+    """
+
+    async def test_a_kill_ends_the_call_on_the_next_tick(self) -> None:
+        conversation, clock, _ = build(brain=ScriptedBrain("should not be spoken"))
+        await conversation.open()
+        await drain(conversation, "This is the bank fraud department.")
+
+        assert conversation.request_kill(source="monitor", reason="persona break")
+        clock.advance(1)
+        actions = [a async for a in conversation.tick()]
+
+        assert any(isinstance(a, HangUp) for a in actions)
+        assert spoken(actions) == [], "a watchdog kill hangs up; it does not make a speech"
+        assert conversation.end_reason is EndReason.WATCHDOG_KILL
+        assert conversation.ended
+
+    async def test_a_kill_also_lands_on_the_next_caller_turn(self) -> None:
+        """Whichever evaluation comes first — the caller may speak before the tick."""
+        conversation, _, sink = build(brain=ScriptedBrain("should not be spoken"))
+        await conversation.open()
+        await drain(conversation, "This is the bank fraud department.")
+
+        conversation.request_kill(source="monitor", reason="via the caller-turn path")
+        actions = await drain(conversation, "Are you still there, ma'am?")
+
+        assert any(isinstance(a, HangUp) for a in actions)
+        assert conversation.end_reason is EndReason.WATCHDOG_KILL
+        # Asserting the sink, not just the hangup: with this left out, the
+        # caller-turn path could stop emitting its verdict entirely and stay green.
+        assert sink.types().count("watchdog_kill") == 1
+
+    async def test_a_kill_is_still_logged_when_the_caller_hangs_up_first(self) -> None:
+        """The likeliest ending for a killed call, and the one that used to lose it.
+
+        A scammer whose persona break was just caught hangs up. If the verdict is
+        not drained here it dies with the object, and the log shows a plain
+        caller hangup with no evidence the watchdog ever fired.
+        """
+        conversation, _, sink = build(brain=ScriptedBrain("nope"))
+        await conversation.open()
+        await drain(conversation, "This is the bank fraud department.")
+
+        assert conversation.request_kill(source="monitor", reason="persona break")
+        await conversation.caller_hung_up()
+
+        assert sink.types().count("watchdog_kill") == 1
+        assert next(
+            e for e in sink.events if e.type == "watchdog_kill"
+        ).payload["reason"] == "persona break"
+
+    async def test_the_verdict_is_logged_once_at_the_evaluation_that_acts_on_it(
+        self,
+    ) -> None:
+        conversation, clock, sink = build(brain=ScriptedBrain("nope"))
+        await conversation.open()
+        await drain(conversation, "This is the bank fraud department.")
+
+        conversation.request_kill(
+            source="monitor", reason="claimed to be a real bank", findings=["real_entity"]
+        )
+        # Nothing is emitted at the request itself: an out-of-band task writing into
+        # the per-call sequence would interleave differently on every run.
+        assert "watchdog_kill" not in sink.types()
+
+        clock.advance(1)
+        [a async for a in conversation.tick()]
+        assert sink.types().count("watchdog_kill") == 1
+
+        killed = next(e for e in sink.events if e.type == "watchdog_kill")
+        assert killed.payload["source"] == "monitor"
+        assert killed.payload["findings"] == ["real_entity"]
+        # It precedes the phase change it caused, so the log reads in causal order.
+        phase_changed = [e for e in sink.events if e.type == "phase_changed"]
+        assert killed.seq < phase_changed[-1].seq
+
+    async def test_a_second_request_changes_nothing(self) -> None:
+        conversation, clock, sink = build(brain=ScriptedBrain("nope"))
+        await conversation.open()
+        await drain(conversation, "This is the bank fraud department.")
+
+        assert conversation.request_kill(source="monitor", reason="first")
+        assert not conversation.request_kill(source="monitor", reason="second")
+
+        clock.advance(1)
+        [a async for a in conversation.tick()]
+        assert sink.types().count("watchdog_kill") == 1
+        assert next(
+            e for e in sink.events if e.type == "watchdog_kill"
+        ).payload["reason"] == "first"
+
+    async def test_a_clean_tap_changes_the_event_stream_not_at_all(self) -> None:
+        """The property the replay gate depends on, tested with an actual tap.
+
+        A monitor watches by wrapping the event sink. One that consumes every
+        event and reaches no verdict must leave a byte-identical stream, or
+        attaching one breaks every golden.
+
+        An earlier version of this test built two conversations and compared
+        them without a tap anywhere, so it passed with the entire kill seam
+        stubbed out — it asserted that ``build()`` is deterministic, which
+        ``test_goldens.py`` already proves far more strongly. This one wires a
+        real consumer: it walks every event, reads the payloads the monitor will
+        read, and calls nothing. What it catches is a tap that mutates a payload
+        in passing, or one that changes what reaches the inner sink.
+
+        What it does *not* catch, stated because an earlier docstring claimed it
+        did: a side-effectful poll on the clean path. Both arms run the same
+        code, so any code-level side effect appears in both and cancels — and no
+        tap can perturb ``_seq`` regardless, since ``_emit`` increments before
+        awaiting the sink. Catching that needs a golden, which is what
+        ``test_goldens.py`` is for.
+        """
+
+        class WatchingSink:
+            """Stands in for the monitor's tap: sees everything, decides nothing."""
+
+            def __init__(self, inner: RecordingSink) -> None:
+                self.inner = inner
+                self.seen: list[str] = []
+
+            async def emit(self, event: CallEvent) -> None:
+                if event.type in ("agent_turn", "caller_turn"):
+                    # Exactly what the classifier will be handed.
+                    self.seen.append(event.payload["text"])
+                await self.inner.emit(event)
+
+        async def run(sink: object) -> None:
+            conversation, clock, _ = build(brain=ScriptedBrain("Oh, my. The bank, you say?"))
+            conversation.events = sink  # type: ignore[assignment]
+            await conversation.open()
+            await drain(conversation, "This is the bank fraud department.")
+            clock.advance(1)
+            [a async for a in conversation.tick()]
+
+        plain = RecordingSink()
+        await run(plain)
+
+        inner = RecordingSink()
+        watching = WatchingSink(inner)
+        await run(watching)
+
+        assert watching.seen, "the tap saw no turns — it is not actually watching"
+        assert [(e.seq, e.type, e.payload) for e in plain.events] == [
+            (e.seq, e.type, e.payload) for e in inner.events
+        ]
+
+    async def test_a_kill_stops_the_reply_that_is_still_streaming(self) -> None:
+        """The kill has to stop the mouth, not just the state machine.
+
+        Without this the persona finishes saying the thing it was killed for:
+        on the live path the hangup waits on the turn lock this turn holds and
+        then drains queued audio, so "ends within a second" was true of the
+        phase and false of the caller's ears.
+        """
+        conversation, _, sink = build(
+            brain=TurnScriptedBrain(["First sentence.", "Second sentence.", "Third."])
+        )
+        await conversation.open()
+
+        said: list[str] = []
+        async for action in conversation.respond("This is the bank fraud department."):
+            if isinstance(action, Say):
+                said.append(action.text)
+                if len(said) == 1:
+                    # The verdict lands on the strength of sentence one.
+                    assert conversation.request_kill(source="monitor", reason="persona break")
+
+        assert said == ["First sentence."], (
+            "the persona kept talking after it was killed; it said "
+            f"{said[1:]} on a call already decided unsafe"
+        )
+        turn = next(e for e in sink.events if e.type == "agent_turn")
+        assert turn.payload["failure"] == "killed", (
+            "a kill-shortened turn is indistinguishable in the log from a short clean one"
+        )
+        assert turn.payload["text"] == "First sentence."
+        assert conversation.history[-1].content == "First sentence."
+
+    async def test_a_kill_latched_before_a_turn_never_consults_the_model(self) -> None:
+        """The cheapest outcome, and worth pinning: no request is built at all.
+
+        A kill latched between turns is seen by the *planner*, which lands
+        TERMINATE — a phase that speaks nothing and sets ``consult_model``
+        False. So the model is never called, and no token is spent on a call
+        already decided unsafe.
+        """
+        brain = ScriptedBrain("Should never be spoken.")
+        conversation, _, sink = build(brain=brain)
+        await conversation.open()
+        conversation.request_kill(source="monitor", reason="latched between turns")
+
+        actions = await drain(conversation, "This is the bank fraud department.")
+
+        assert spoken(actions) == []
+        assert any(isinstance(a, HangUp) for a in actions)
+        assert brain.calls == [], "the model was consulted on a call already killed"
+        assert "agent_turn" not in sink.types()
+
+    async def test_a_killed_turn_produces_no_further_audio_of_any_kind(self) -> None:
+        """The invariant, asserted as a class rather than as one instance.
+
+        A hold is what this catches today — the plan was built before the verdict
+        so it still carries one, and on the live path ``perform`` sleeps it out
+        inside the turn lock the tick's ``HangUp`` is waiting on, while
+        ``_occupy_line`` pushes the dead-air deadline past it. A killed call sat
+        there playing a kettle for up to ninety seconds.
+
+        Written against everything ``_execute`` might yield after ``_generate``
+        rather than against ``Pause`` specifically, so whatever gets appended
+        there next inherits the guarantee instead of needing its own test.
+        """
+        conversation, _, _ = build(hold_probability=1.0, hold_seconds=90)
+
+        class KillsAfterOneSentence:
+            async def stream_reply(self, history, state_note=None) -> AsyncIterator[str]:  # noqa: ANN001
+                yield "Oh dear."
+                conversation.request_kill(source="monitor", reason="mid-turn")
+                yield "Should never be spoken."
+
+        conversation.brain = KillsAfterOneSentence()  # type: ignore[assignment]
+        # Only a *baiting* phase plans a hold — the neutral branch never does, so a
+        # first-turn version of this test exercises nothing. Same shape as the
+        # dead-air-versus-hold tests above.
+        conversation.director.state.phase = CallPhase.STALL
+        await conversation.open()
+
+        actions = await drain(conversation, "Can you read me the card number?")
+        assert conversation.last_plan is not None
+        assert conversation.last_plan.hold_seconds == 90, (
+            "setup planned no hold, so this test cannot see one being skipped"
+        )
+        after_kill = actions[actions.index(Say("Oh dear.")) + 1 :]
+
+        assert after_kill == [], (
+            f"a killed turn kept performing: {after_kill}. Anything here is audio on "
+            "a call already judged unsafe, and a Pause is worse than speech — the "
+            "hangup waits on the turn lock while it plays out"
+        )
+
+    @pytest.mark.parametrize(
+        ("label", "kwargs"),
+        [("timeout", {"hang": True}), ("error", {"raises": RuntimeError("boom")})],
+    )
+    async def test_the_fail_soft_fumble_never_speaks_on_a_killed_call(
+        self, label: str, kwargs: dict[str, object]
+    ) -> None:
+        """The verdict lands, then the stream dies. The loop never sees the latch.
+
+        ``_generate`` tracks whether the *loop* observed a kill, which is weaker
+        than whether the call was killed — and they diverge precisely here. With
+        the post-loop decision reading the local instead of the latch, a timeout
+        or a model error concurrent with a verdict fires the stalling line, and
+        the fail-soft path defeats the guardrail. A classifier racing a slow
+        generation is the ordinary case, not an exotic one.
+        """
+        conversation, clock, sink = build(
+            brain=ScriptedBrain("never reached", **kwargs),  # type: ignore[arg-type]
+        )
+        conversation.generation_timeout_seconds = 0.05
+        await conversation.open()
+        conversation.request_kill(source="monitor", reason=f"verdict then {label}")
+
+        # Latched between turns, so the planner lands TERMINATE and never generates.
+        # Drive `_generate` directly to reach the branch under test.
+        plan = conversation.director.handle_caller_turn(
+            "This is the bank fraud department.", elapsed_seconds=1.0
+        )
+        plan.consult_model = True
+        actions = [a async for a in conversation._generate(plan)]  # noqa: SLF001
+
+        assert spoken(actions) == [], (
+            f"the persona spoke a fumble line after a {label} on a killed call"
+        )
+        turn = next(e for e in sink.events if e.type == "agent_turn")
+        assert turn.payload["fumbled"] is False
+        assert turn.payload["failure"] == label, (
+            "the proximate cause should survive; the watchdog_kill event carries the rest"
+        )
+
+    async def test_the_verdict_is_reported_once_however_many_times_it_is_drained(
+        self,
+    ) -> None:
+        """``_report_pending_kill``'s contract is *once*, not once per call site.
+
+        Asserted directly on the method rather than through a call sequence,
+        because today no sequence can reach it twice: whichever evaluation
+        reports the verdict also ends the call, and every later path
+        early-returns on ``_ended``. That makes the guard unreachable *now* and
+        not dead — three sites already call it, the sentence loop reads the same
+        latch, and G-20's endpoint adds a fourth entry point. A guard whose only
+        proof is "no current caller can hit it" is exactly the kind that stops
+        holding the moment someone adds one, so it is pinned at the unit.
+        """
+        conversation, _, sink = build(brain=ScriptedBrain("nope"))
+        await conversation.open()
+        assert conversation.request_kill(source="monitor", reason="once")
+
+        await conversation._report_pending_kill()  # noqa: SLF001
+        await conversation._report_pending_kill()  # noqa: SLF001
+        await conversation._report_pending_kill()  # noqa: SLF001
+
+        assert sink.types().count("watchdog_kill") == 1
+
+    async def test_every_evaluation_path_can_report_the_verdict(self) -> None:
+        """The three drain sites, each reached from a fresh call.
+
+        One test per path rather than one sequence through all three, because
+        the first evaluation to see a latch ends the call — so a sequence only
+        ever exercises whichever site it reaches first.
+        """
+        async def via_tick() -> RecordingSink:
+            conversation, clock, sink = build(brain=ScriptedBrain("nope"))
+            await conversation.open()
+            conversation.request_kill(source="monitor", reason="tick")
+            clock.advance(1)
+            [a async for a in conversation.tick()]
+            return sink
+
+        async def via_turn() -> RecordingSink:
+            conversation, _, sink = build(brain=ScriptedBrain("nope"))
+            await conversation.open()
+            conversation.request_kill(source="monitor", reason="turn")
+            await drain(conversation, "Still there, ma'am?")
+            return sink
+
+        async def via_hangup() -> RecordingSink:
+            conversation, _, sink = build(brain=ScriptedBrain("nope"))
+            await conversation.open()
+            conversation.request_kill(source="monitor", reason="hangup")
+            await conversation.caller_hung_up()
+            return sink
+
+        for path in (via_tick, via_turn, via_hangup):
+            sink = await path()
+            assert sink.types().count("watchdog_kill") == 1, f"{path.__name__} lost the verdict"
+
+    async def test_an_emitted_verdict_is_not_rewritten_by_a_later_one(self) -> None:
+        """The event handed to the sink must not change afterwards.
+
+        ``findings`` and ``superseded`` are lists the director still holds, and
+        ``CallEvent.payload`` is the live mapping — a shallow copy at the emit
+        would let a later request retroactively edit an event already recorded.
+        """
+        conversation, clock, sink = build(brain=ScriptedBrain("nope"))
+        await conversation.open()
+        conversation.request_kill(source="monitor", reason="first", findings=["persona_break"])
+        conversation.request_kill(source="kill_switch", reason="second")
+
+        clock.advance(1)
+        [a async for a in conversation.tick()]
+        payload = next(e for e in sink.events if e.type == "watchdog_kill").payload
+        recorded = copy.deepcopy(dict(payload))
+
+        # Something latches again after the event is already out.
+        conversation.director._latch_kill(source="operator", reason="third")  # noqa: SLF001
+
+        assert dict(payload) == recorded, (
+            "an event already handed to the sink was rewritten after the fact"
+        )
+
+    async def test_a_kill_landing_before_the_first_sentence_suppresses_the_fumble(
+        self,
+    ) -> None:
+        """The fail-soft fumble must not fire on a call that was just killed.
+
+        ``_generate`` speaks a stalling line rather than nothing when a reply
+        comes back empty — correct everywhere else, and wrong here, where
+        silence is the entire point. This is the narrow window the planner
+        cannot cover: the turn was already in flight when the verdict landed.
+        """
+        conversation, _, sink = build()
+
+        class KillsItselfMidStream:
+            """A model whose first sentence arrives just after the verdict does."""
+
+            async def stream_reply(self, history, state_note=None) -> AsyncIterator[str]:  # noqa: ANN001
+                conversation.request_kill(source="monitor", reason="mid-stream")
+                yield "Should never be spoken."
+                yield "Nor this."
+
+        conversation.brain = KillsItselfMidStream()  # type: ignore[assignment]
+        await conversation.open()
+
+        actions = await drain(conversation, "This is the bank fraud department.")
+
+        assert spoken(actions) == [], (
+            "the persona spoke on a call decided unsafe — a fumble line is still speech"
+        )
+        turn = next(e for e in sink.events if e.type == "agent_turn")
+        assert turn.payload["fumbled"] is False
+        assert turn.payload["failure"] == "killed"
+        assert turn.payload["text"] == ""
+        assert [t.content for t in conversation.history if t.role == "assistant"] == [
+            NEUTRAL_GREETING
+        ], "an empty assistant turn reached the transcript"
+
+    async def test_a_verdict_is_refused_in_the_window_before_the_hangup_is_yielded(
+        self,
+    ) -> None:
+        """The half of the refusal that ``_ended`` alone does not cover.
+
+        ``_ended`` is set inside ``_execute``'s generator, so between the
+        ``Say(DISCLOSURE_SCRIPT)`` yield and the ``HangUp`` yield the phase is
+        terminal while ``_ended`` is still False. On the live path that interval
+        spans a frame push, so a monitor task can land in it.
+        """
+        conversation, _, sink = build(brain=ScriptedBrain("nope"), safeword="pineapple")
+        await conversation.open()
+
+        gen = conversation.respond("Marjorie, it's me — pineapple.")
+        first = await gen.__anext__()
+        assert isinstance(first, Say) and first.text == DISCLOSURE_SCRIPT
+        assert conversation.final_phase is CallPhase.DISCLOSE_EXIT
+        assert not conversation.ended, "the window this test needs is not open"
+
+        assert not conversation.request_kill(source="monitor", reason="landed mid-disclosure")
+
+        async for _ in gen:
+            pass
+        assert conversation.end_reason is EndReason.DISCLOSED_EXIT
+        assert "watchdog_kill" not in sink.types()
+
+    async def test_a_bare_string_of_findings_is_refused_rather_than_splatted(self) -> None:
+        # `str` satisfies `Sequence[str]`, no typechecker runs in CI, and the
+        # resulting ['p','e','r',...] is valid JSON — so nothing downstream would
+        # ever notice. The monitor's verdict kinds are exactly single strings.
+        conversation, _, _ = build()
+        await conversation.open()
+        with pytest.raises(TypeError, match="not a bare str"):
+            conversation.request_kill(source="monitor", findings="persona_break")
+
+    async def test_a_kill_before_the_call_opens_is_refused(self) -> None:
+        # Unreachable until something can look a conversation up by call_sid —
+        # which is the next thing Phase 3 builds. Without the guard the kill
+        # returns True and the persona still answers and greets.
+        conversation, _, _ = build()
+        assert not conversation.request_kill(source="kill_switch")
+        actions = await conversation.open()
+        assert spoken(actions) == [NEUTRAL_GREETING]
+
+    async def test_a_superseding_request_is_recorded_rather_than_dropped(self) -> None:
+        """An operator hitting the switch on a call the monitor already killed.
+
+        The first request stands — the call is already ending — but losing the
+        record of who else pressed it would make the outcome misattribute.
+        """
+        conversation, clock, sink = build(brain=ScriptedBrain("nope"))
+        await conversation.open()
+        await drain(conversation, "This is the bank fraud department.")
+
+        assert conversation.request_kill(source="monitor", reason="soft verdict")
+        assert not conversation.request_kill(source="kill_switch", reason="operator")
+
+        clock.advance(1)
+        [a async for a in conversation.tick()]
+        payload = next(e for e in sink.events if e.type == "watchdog_kill").payload
+        assert payload["source"] == "monitor"
+        assert payload["superseded"] == [
+            {"source": "kill_switch", "reason": "operator", "findings": []}
+        ]
+
+    async def test_a_verdict_arriving_after_the_call_ended_is_refused(self) -> None:
+        conversation, _, sink = build(brain=ScriptedBrain("nope"))
+        await conversation.open()
+        await conversation.caller_hung_up()
+
+        assert not conversation.request_kill(source="monitor", reason="too late")
+        assert "watchdog_kill" not in sink.types()
+
+    async def test_a_verdict_cannot_cancel_a_disclosure_already_owed(self) -> None:
+        """The fixed-script carve-out, end to end.
+
+        A real caller has been released and promised a voicemail. A verdict
+        landing now must not convert that into a bare hangup — and must not
+        take away the promise the transport reads when it decides between
+        voicemail and hangup.
+        """
+        conversation, clock, sink = build(brain=ScriptedBrain("nope"), safeword="pineapple")
+        await conversation.open()
+        actions = await drain(conversation, "Marjorie, it's me — pineapple.")
+        assert spoken(actions) == [DISCLOSURE_SCRIPT]
+        assert conversation.offered_voicemail
+
+        assert not conversation.request_kill(source="monitor", reason="late verdict")
+        clock.advance(1)
+        assert [a async for a in conversation.tick()] == []
+
+        assert conversation.final_phase is CallPhase.DISCLOSE_EXIT
+        assert conversation.end_reason is EndReason.DISCLOSED_EXIT
+        assert conversation.offered_voicemail, (
+            "a late verdict took away a voicemail a real person was just promised"
+        )
+        assert "watchdog_kill" not in sink.types()
 
 
 class TestEvents:

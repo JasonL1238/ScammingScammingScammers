@@ -289,11 +289,19 @@ does not wait for persistence.
   `agent_turn`/`caller_turn` events from an in-process tap — never awaited in the
   per-sentence vet loop, so it adds zero latency to live audio.
 - Enforcement rides the already-built dead seam: the verdict sets
-  `CallContext.watchdog_killed`
-  ([`state_machine.py:98`](../ssscammers/agent/state_machine.py), currently never set)
+  `CallContext.watchdog_killed` in [`state_machine.py`](../ssscammers/agent/state_machine.py),
   consumed by `check_exits` at the existing 1s tick, terminating via
   `Trigger`/`EndReason.WATCHDOG_KILL` — zero new enforcement machinery, and a timer
-  still never starts a model turn.
+  still never starts a model turn. **Built at T3.1**, which also moved the
+  `watchdog_killed` check *below* the real-person exits and the already-exited guard
+  (a verdict must never cost a caller a disclosure they were owed), and made the kill
+  stop the turn rather than only the state machine: the sentence loop breaks at the
+  next boundary, and a killed turn produces no further audio of any kind — notably not
+  the hold it had already planned, which on the live path would sleep out up to ninety
+  seconds inside the lock the hangup is waiting on. `Conversation.request_kill` is the
+  seam the classifier calls; it is synchronous, latches only, and is refused once the
+  call has committed to an exit. It bounds what is *composed*, not what is heard —
+  sentences already handed to the transport are drained before the socket closes.
 - **Fail-open polarity** exactly as designed: classifier timeout or error leaves the
   deterministic verdict standing; bounded concurrency and hard timeouts; the monitor
   holds only a narrow Anthropic key.

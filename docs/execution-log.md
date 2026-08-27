@@ -1696,3 +1696,199 @@ which is where an owner working the active plan will find them.
 - **Verification (final tree):** 952 passed / 16 skipped (950 + the boundary
   test + the default-drift test); textloop dry exit 0; `ruff check .` clean;
   `git diff --stat ssscammers/` empty — no production code changed.
+- **Green on main:** run
+  [33030385351](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/33030385351)
+  (commit `245b21e`).
+
+## Phase 3 — MONITOR watchdog layer — IN PROGRESS
+
+### T3.1 — The kill seam
+
+- **Scope:** `ssscammers/agent/state_machine.py` (the `watchdog_killed` check
+  moved below the real-person exits and below the already-exited guard),
+  `ssscammers/agent/persona_director.py` (a one-way latch that records who
+  asked), `ssscammers/agent/conversation.py` (`request_kill`, the event
+  emitted at the next evaluation, and the sentence loop breaking on the
+  latch), `tests/test_state_machine.py`, `tests/test_conversation.py`,
+  `docs/roadmap.md`, and `docs/guardrails.md`'s G-20 row. No classifier: the
+  verdict is injected directly, because the point of this task is that whatever
+  produces a verdict, the call ends through the enforcement path that already
+  exists.
+
+  **What did *not* move, deliberately:** `guardrails.md`'s G-17 row still reads
+  "the model-backed half is pending", and the preamble still says there is no
+  MONITOR mechanism in the running system. Both remain exactly true — this task
+  built the seam, not the classifier, and nothing produces a verdict yet. G-20's
+  row *did* move, because half of "killing a call already in flight" now exists.
+  Stated so a reader can tell deferral from oversight.
+- **The design claim, and why the ordering is the whole of it.**
+  `CallContext.watchdog_killed` has existed since the state machine was written
+  and was set by nothing. Wiring a monitor into it *as positioned* would have
+  made a classifier outrank a real person saying the safeword: they would get a
+  bare hangup instead of the disclosure and the voicemail. It now ranks below
+  the safeword, the DTMF escape, the allowlist and a positive real-person read —
+  each of which also stops the persona, and does it while keeping a promise the
+  watchdog cannot keep — and below the "once we have exited" guard, so a verdict
+  cannot drag a call back out of an exit it already committed to. That last is
+  the fixed-script carve-out, and taking it from the machine's own structure
+  means the monitor cannot forget it.
+- **Rule 1: two adversaries, one refutation round, nine findings, all resolved.**
+  The review found more real defects than the change originally had lines of
+  logic. In severity order:
+  - **The kill did not stop the mouth.** A verdict landing at sentence 1 of a
+    four-sentence reply left sentences 2-4 to be generated, vetted and spoken.
+    On the live path it is worse than one turn: `tick()` runs outside
+    `_turn_lock` while `perform` holds it, and `_end_call` drains queued audio,
+    so the *whole* remaining reply is spoken before the hangup. "Ends within a
+    second" was true of the state machine and false of the caller's ears — which
+    is precisely the harm G-17 exists to prevent. Fixed by polling the latch at
+    each sentence boundary, the same shape the cumulative filter already uses.
+    My proposed "two-line reuse" was itself refuted: the fix needs four parts,
+    and the reviewer who found the defect was wrong about its size while the
+    other was right. The break must precede `spoken.append` (or the digit tail
+    reflects words never said); the turn needs `failure="killed"` (or a
+    kill-shortened turn is byte-identical in the log to a short clean one); the
+    empty-reply fumble must be suppressed (or the persona speaks a stalling line
+    on a call just decided unsafe — the fail-soft path defeating the guardrail);
+    and an empty killed turn must not reach the transcript.
+  - **A latched kill vanished if the caller hung up first** — the modal ending
+    for a killed call, and `caller_hung_up` was the one evaluation path that
+    never drained the pending verdict. Found independently by both adversaries.
+  - **The design claim was untested.** Hoisting the check back above the guard
+    left all 142 tests green. The test re-passed the releasing signal into the
+    second evaluation, and `heard_safeword` / `emergency_suspected` are one-way
+    latches in the triage engine — so in production they re-fire and are answered
+    *above* the watchdog, making the guard unreachable by either vector. The
+    test reproduced that unreachability instead of testing it. Now three vectors
+    where the signal genuinely fades: DTMF (drained per evaluation), a cleared
+    emergency, and — the production-realistic one — a caller released on a legit
+    read who then talks scammy, since `_is_real_person` is recomputed each turn
+    while the scam score only accumulates.
+  - **The latch was a second, unguarded door.** `PersonaDirector.watchdog_kill()`
+    was public and could end a call while bypassing every guard *and* emitting
+    nothing. Whoever holds a director should not be able to stop a call
+    anonymously, so latching and recording are now one operation.
+  - **`findings: Sequence[str]` splatted a bare string into characters.** `str`
+    satisfies `Sequence[str]`, ruff is the only static check in CI, and the
+    result is valid JSON — so nothing downstream would ever have noticed. The
+    monitor's verdict kinds are exactly single strings. Now rejected.
+  - **A test that asserted nothing.** `test_a_clean_monitor_changes_the_event_stream_not_at_all`
+    passed with the entire kill seam stubbed out: it compared two conversations
+    with no tap anywhere, asserting that `build()` is deterministic — which
+    `test_goldens.py` proves far more strongly. Rewritten with a real tap that
+    wraps the sink, walks every turn event, and decides nothing. The reviewer
+    who first said "delete it" withdrew that once the sentence-loop poll landed,
+    because there is now a clean-path code path for it to protect.
+  - **The carve-out's window.** The two adversaries flatly contradicted each
+    other on whether one exists. Resolved by opening it: partially consuming
+    `respond()`'s generator leaves the phase terminal while `_ended` is still
+    False, for the whole span of the disclosure. Both were right about different
+    things — the carve-out has no *escape*, and the `TERMINAL_PHASES` clause is
+    what makes that true rather than redundant. The ten lines that opened it are
+    now the test.
+  - **A superseding kill vanished** — an operator hitting the switch on a call
+    the monitor already killed left no trace, and the payload still named the
+    monitor. Now recorded under `superseded`.
+  - **A kill before `open()`** returned True and the persona still answered and
+    greeted. Unreachable today; the `kill(call_sid)` lookup Phase 3 adds next is
+    what makes it reachable.
+- **Escalation — open question for the owner.** `end_reason` does not say the
+  watchdog fired whenever a signal ranked *above* it answers first, and every
+  exit above it is one. Two reachable shapes, and the second is the common one:
+  - Killed *and* reading as a real person: exits `DISCLOSE_EXIT` /
+    `DISCLOSED_EXIT`, voicemail promised.
+  - Killed, then the scammer hangs up — the ending this entry itself calls the
+    likeliest for a killed call: `caller_hung_up` is answered above the watchdog
+    (correctly; they really did hang up), so the call ends `CALLER_HANGUP`.
+
+  The phases are right in both cases and should not change: G-20's polarity is
+  "take messages, never drop calls", and a real person must not lose their
+  disclosure to a classifier. But `end_reason` is what the registry, the ledger
+  and any dashboard read, and on both paths it is silent about the watchdog. The
+  verdict survives in the event log, so it is recoverable there and absent from
+  the outcome record — and `test_a_kill_is_still_logged_when_the_caller_hangs_up_first`
+  asserts the event and deliberately not `end_reason`, because asserting today's
+  value would pin the misattribution. **Recommendation:** record
+  `watchdog_killed` alongside `end_reason` so a killed call is countable however
+  it ends — resolved at the reporting layer, not the state machine. Deferred
+  rather than done here because it adds a field the registry reads, which is a
+  persisted-shape change and the owner's call (roadmap open decisions 2 and 3's
+  class). Phase 5 is where it lands.
+- **Rule 1, round 2 — the fixes were reviewed, and five more defects fell out.**
+  Two were the same mistake in different clothes, and naming that mattered more
+  than either instance: **the latch was read in one place while the turn carried
+  on in others.**
+  - **The kill stopped the mouth and not the hold.** Both adversaries found it
+    independently. `_execute` falls straight into the hold branch after
+    `_generate` returns, and the plan was built before the verdict, so it still
+    carries one — roughly one baiting turn in four for marjorie. On the live
+    path `perform` sleeps it out inside the turn lock the tick's `HangUp` is
+    waiting on, and `_occupy_line` pushes the dead-air deadline past it, so
+    neither the kill nor G-16 can fire. A killed call would sit playing a kettle
+    for up to ninety seconds. I had written the sentence fix up as closing this;
+    it closed the one-to-three-second half and left the ninety-second half.
+  - **The fumble suppression read a loop-local instead of the latch.** `killed`
+    records whether the sentence loop *observed* a verdict, which is weaker than
+    whether the call was killed, and the two diverge exactly on the fail-soft
+    paths: a verdict landing while sentence one is still forming, on a stream
+    that then times out or raises, never re-enters the loop — so the persona
+    speaks a stalling line on a killed call. A classifier racing a slow
+    generation is the ordinary case. Neither the streaming test nor the
+    fumble test could see it.
+  - **The emitted payload aliased the director's lists.** `dict(request)` is
+    shallow, and `CallEvent.payload` is that live mapping, so a later kill either
+    retroactively rewrote an event already handed to the sink or vanished,
+    depending on whether `superseded` existed at emit time. Now a deep copy.
+  - **The director's latch was still a second public door** — the anonymity half
+    was closed in round 1, the lifecycle half was not. Renamed to `_latch_kill`,
+    with `Conversation.request_kill` documented as the only door and the owner of
+    the guards.
+  - **A recorded red-proof count was simply wrong** — see the corrected table
+    below. An evidence number that does not reproduce is worse than no number.
+  - Adjudicated and *not* changed, with the reasoning recorded because it cut
+    against my own instinct: hoisting the poll out of `_generate` into `_execute`
+    was proposed and rejected — the sentence boundary only exists inside that
+    loop, so hoisting it would re-open the larger defect it fixed. The altitude
+    error was that `_execute` had *no* guard for what follows `_generate`, which
+    is now one condition carrying a stated invariant rather than three guards.
+    A frozen `KillRequest` dataclass with an enum `source` was also proposed,
+    matching `TurnPlan`/`Transition`/`FilterResult`, and deferred: it would make
+    the aliasing bug impossible by construction, but `"kill_switch"` has no
+    caller yet, and pinning a persisted payload shape before its only consumer
+    exists is the wrong trade.
+- **Red-proof (twelve mutations, `test_conversation.py` + `test_state_machine.py`,
+  157 tests, `.venv/bin/python` — the system interpreter lacks `pytest-asyncio`
+  and reds every async test).** Under the cache-clearing procedure. Six of these
+  were measured *silent* before the review's fixes:
+  - Watchdog hoisted above the terminal guard: **was 142 passed → 3 failed**.
+  - Terminal guard deleted from `_evaluate` entirely: **3 failed**.
+  - `request_kill` drops the terminal-phase half of its refusal:
+    **was 142 passed → 2 failed**. *(An earlier version of this entry recorded
+    "142 → 2 failed" against an ambiguous description of which guard was mutated;
+    at the time the true figure was 1. Both readings are now listed separately
+    with their own numbers.)*
+  - `_report_pending_kill` dropped from `respond`: **was 100 passed → 1 failed**.
+  - …from `tick`: **5 failed**. …from `caller_hung_up`: **1 failed**.
+  - Sentence loop no longer polls the latch: **3 failed**.
+  - Post-loop latch read removed: **2 failed** (round-2 fix).
+  - Hold no longer gated on the latch: **was 156 passed → 1 failed**. The first
+    version of this test planned no hold at all, because only a *baiting* phase
+    plans one and a first caller turn lands in ASSESSING — it asserted an absence
+    that was already absent. It now asserts the plan carries a hold before
+    asserting the hold is skipped.
+  - Fumble suppression removed: **3 failed**.
+  - Emit uses a shallow copy: **1 failed** (round-2 fix).
+  - Idempotence flag removed: **was 156 passed → 1 failed**. Also initially
+    untested: every call sequence that reaches one drain site ends the call, so
+    the contract is now pinned at the unit instead.
+  - Restored: 157 passed.
+- **Known limit, recorded rather than fixed:** a killed call is **not
+  byte-replayable**. Skipping the fumble and the hold skips
+  `rng.choice(FUMBLE_LINES)` and `rng.choice(holds)` on the one shared stream, so
+  every later draw shifts. Nothing observes it today — no golden kills a call,
+  and replay drives recorded *model* streams, not kill injections — but "replay
+  determinism holds" would be false if written unqualified. Making a killed call
+  replayable means recording the kill as a re-drivable input, which belongs with
+  the monitor that produces one.
+- **Verification (final tree):** 982 passed / 16 skipped; textloop dry exit 0;
+  `ruff check .` clean.

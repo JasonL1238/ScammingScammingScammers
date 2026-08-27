@@ -23,7 +23,9 @@ from __future__ import annotations
 
 import logging
 import random
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 from ssscammers.agent.persona import Persona
 from ssscammers.agent.state_machine import CallContext, CallStateMachine, Transition
@@ -147,6 +149,8 @@ class PersonaDirector:
     _last_tactic: Tactic = field(init=False, default=Tactic.NONE)
     _claims: list[str] = field(init=False, default_factory=list)
     _caller_turns: int = field(init=False, default=0)
+    _watchdog_killed: bool = field(init=False, default=False)
+    _kill_request: dict[str, Any] | None = field(init=False, default=None)
 
     def __post_init__(self) -> None:
         self.state = CallStateMachine(
@@ -162,6 +166,59 @@ class PersonaDirector:
         self.filter = OutputFilter.for_identity(
             self.persona.identity, owner_pii=self.owner_pii, rng=self.rng
         )
+
+    # -- out-of-band override -------------------------------------------------
+
+    @property
+    def watchdog_killed(self) -> bool:
+        """Whether something outside the turn loop has asked for this call to stop."""
+        return self._watchdog_killed
+
+    @property
+    def kill_request(self) -> Mapping[str, Any] | None:
+        """Who asked for the kill and why. ``None`` until something does."""
+        return self._kill_request
+
+    def _latch_kill(
+        self, *, source: str, reason: str = "", findings: Sequence[str] = ()
+    ) -> None:
+        """Latch a kill (G-17, G-20) **and** record who asked, in one operation.
+
+        Private because it is the *mechanism*, not the door.
+        :meth:`ssscammers.agent.conversation.Conversation.request_kill` is the door: it
+        owns the lifecycle guards (the call has opened, has not ended, has not already
+        committed to an exit) and is the only caller. A review found this method public
+        and unguarded, which meant anything holding a director could stop a call while
+        skipping every one of those checks — and, before the provenance moved in here,
+        could do it anonymously.
+
+        A latch rather than an action, deliberately. The monitor runs in its own task and
+        the kill switch arrives on an HTTP request; neither may drive a turn, because a
+        turn is the one thing that must only ever be started by the caller speaking or by
+        the tick that already exists. Setting a flag the existing evaluation reads adds no
+        new enforcement path — the state machine and ``check_exits`` do the work they
+        already did.
+
+        The provenance is not optional and is stored here rather than by the caller,
+        because a review found the two could come apart: with the latch bare, anything
+        holding a director could stop a call and leave nothing in the event log saying
+        anything had. Whoever holds this handle can end a call; they should not be able
+        to end one anonymously.
+
+        A later request does not override the first — the call is already ending — but it
+        is kept in ``superseded`` so a human hitting the kill switch on a call the monitor
+        already killed leaves a trace.
+
+        Deliberately one-way: nothing un-kills a call.
+        """
+        if isinstance(findings, str):  # pragma: no cover - guarded at the public seam
+            raise TypeError("findings must be a sequence of strings, not a bare str")
+        entry = {"source": source, "reason": reason, "findings": list(findings)}
+        if self._kill_request is None:
+            self._kill_request = entry
+        else:
+            self._kill_request.setdefault("superseded", []).append(entry)
+        self._watchdog_killed = True
 
     # -- the one entry point --------------------------------------------------
 
@@ -260,6 +317,7 @@ class PersonaDirector:
                 allowlisted=allowlisted,
                 emergency_suspected=self.triage.emergency,
                 threat_detected=self.triage.threat,
+                watchdog_killed=self._watchdog_killed,
                 spend_exceeded=spend_exceeded,
                 caller_hung_up=caller_hung_up,
             )

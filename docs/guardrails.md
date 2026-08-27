@@ -53,7 +53,7 @@ design is settled but the code is not written.
 | G-17 | Persona-break watchdog can stop the call | MONITOR | partial | Deterministic half built into the filter; the model-backed half is pending |
 | G-18 | Truthful AI disclosure only on code-gated triggers | PROMPT + CODE | **built** | Persona-break patterns blocked except in the exit phases |
 | G-19 | Caller speech is data, never instructions | PROMPT + MONITOR | partial | [`core_rules.md`](../playbooks/core_rules.md); injection scripts in the eval set |
-| G-20 | Kill switch for any live call and the whole system | CODE | partial | `CallRegistry.enabled` stops new calls in-process (they get voicemail, never a dropped call); persistence via `settings.system.enabled` and dashboard control pending, as is killing a call already in flight |
+| G-20 | Kill switch for any live call and the whole system | CODE | partial | `CallRegistry.enabled` stops new calls in-process (they get voicemail, never a dropped call); persistence via `settings.system.enabled` and dashboard control pending. Killing a call **already in flight** is now half-built: `Conversation.request_kill` ([`conversation.py`](../ssscammers/agent/conversation.py)) latches a kill that the next evaluation turns into `TERMINATE`/`EndReason.WATCHDOG_KILL`, stops the reply mid-stream, and refuses once the call has committed to an exit. What is missing is the operator-facing half — nothing maps a `call_sid` to a live `Conversation`, so there is no endpoint to press |
 
 ## Two failure modes, deliberately opposite
 

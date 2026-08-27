@@ -21,6 +21,12 @@ and from *any* of those, at any moment::
 
 Until triage commits, the persona is only ever a neutral "…Hello?" — giving nothing away
 to a real caller who is about to be handed to voicemail.
+
+The one ordering subtlety worth knowing before reading :meth:`CallStateMachine._evaluate`:
+the safety exits are *not* a flat list. The watchdog kill deliberately ranks below the
+real-person exits and below the "already exited" guard, because every one of those also
+stops the persona and does it while keeping a promise to the caller. The comment at that
+line has the full reasoning.
 """
 
 from __future__ import annotations
@@ -154,8 +160,6 @@ class CallStateMachine:
             return CallPhase.TERMINATE, Trigger.CALLER_HUNG_UP
         if ctx.emergency_suspected:
             return CallPhase.EMERGENCY_EXIT, Trigger.EMERGENCY_DETECTED
-        if ctx.watchdog_killed:
-            return CallPhase.TERMINATE, Trigger.WATCHDOG_KILL
         if ctx.threat_detected:
             return CallPhase.TERMINATE, Trigger.THREAT_DETECTED
         if ctx.elapsed_seconds >= self.hard_cap_seconds:
@@ -178,6 +182,24 @@ class CallStateMachine:
         # Once we have exited, nothing pulls us back into the persona.
         if self.phase in TERMINAL_PHASES:
             return self.phase, Trigger.CALLER_SPOKE
+
+        # The watchdog (G-17) sits *here*, below the real-person exits and below the
+        # guard above, rather than up with the hard stops — and the position is the whole
+        # design.
+        #
+        # It loses to every exit above it because those all stop the persona *too*, and
+        # they do it while keeping a promise: the disclosure tells a real caller what they
+        # reached and hands them a voicemail, the 911 script tells someone in danger where
+        # to go. A watchdog kill is a bare hangup. If a real person says the safeword in
+        # the same second a verdict lands, they should get the disclosure, not silence.
+        #
+        # And it sits below the terminal guard so a verdict arriving *after* the call has
+        # committed to an exit cannot drag it back to TERMINATE — which would be a call
+        # where the disclosure was owed, planned, and then cancelled by a classifier. That
+        # is the fixed-script carve-out, and getting it from the machine's own structure is
+        # better than making every caller of this remember it.
+        if ctx.watchdog_killed:
+            return CallPhase.TERMINATE, Trigger.WATCHDOG_KILL
 
         # --- Ordinary progression ---
         if self.phase is CallPhase.GREETING:

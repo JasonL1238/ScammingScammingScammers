@@ -216,6 +216,110 @@ class TestHardStops:
         sm.advance(scam_ctx(watchdog_killed=True))
         assert sm.end_reason is EndReason.WATCHDOG_KILL
 
+
+class TestTheWatchdogNeverCostsACallerTheirExit:
+    """G-17's kill ranks *below* every exit that keeps a promise to the caller.
+
+    The watchdog is a bare hangup: no disclosure, no voicemail, no 911 redirect.
+    Every exit above it in ``_evaluate`` also stops the persona, and does it
+    while telling the caller something they are owed. So a verdict landing in the
+    same evaluation as a real-person signal must lose, and a verdict landing
+    *after* the call has already committed to an exit must not drag it back.
+
+    That second half is the fixed-script carve-out. It falls out of the machine's
+    own ordering rather than being a rule every caller of this has to remember,
+    which is the point — the monitor cannot forget it.
+    """
+
+    @pytest.mark.parametrize(
+        ("signal", "value"),
+        [
+            ("heard_safeword", True),
+            ("dtmf_digits", "5"),
+            ("allowlisted", True),
+        ],
+    )
+    def test_a_real_persons_signal_beats_a_verdict_in_the_same_evaluation(
+        self, signal: str, value: object
+    ) -> None:
+        sm = machine(phase=CallPhase.STALL)
+        sm.advance(scam_ctx(watchdog_killed=True, **{signal: value}))
+        assert sm.phase is CallPhase.DISCLOSE_EXIT, (
+            f"{signal} lost to a watchdog kill — a real person would be hung up on "
+            "instead of hearing the disclosure and being handed a voicemail"
+        )
+        assert sm.end_reason is EndReason.DISCLOSED_EXIT
+
+    def test_a_positive_real_person_read_beats_a_verdict(self) -> None:
+        sm = machine(phase=CallPhase.STALL)
+        sm.advance(
+            scam_ctx(
+                watchdog_killed=True,
+                triage=TriageClass.LEGIT_BUSINESS,
+                triage_confidence=0.6,
+            )
+        )
+        assert sm.phase is CallPhase.DISCLOSE_EXIT
+
+    def test_an_emergency_beats_a_verdict(self) -> None:
+        sm = machine(phase=CallPhase.STALL)
+        sm.advance(scam_ctx(watchdog_killed=True, emergency_suspected=True))
+        assert sm.phase is CallPhase.EMERGENCY_EXIT, (
+            "a watchdog kill outranked someone in danger — they would get silence "
+            "rather than being told to hang up and dial 911"
+        )
+
+    # Each case reaches an exit, then lets the *signal that caused it* go away before
+    # the verdict lands. That is what makes the "once we have exited" guard the only
+    # thing holding the exit — and therefore the only thing under test.
+    #
+    # An earlier version re-passed the original trigger into the second evaluation, and
+    # a review showed it proved nothing: `heard_safeword` and `emergency_suspected` are
+    # one-way latches in the triage engine, so in production they re-fire on every later
+    # evaluation and are answered *above* the watchdog. The guard was unreachable by
+    # either vector, and the test reproduced that unreachability instead of testing it.
+    _EXIT_THEN_FADE = [
+        # DTMF is drained per evaluation, so the digits are genuinely gone next time.
+        ("dtmf", {"dtmf_digits": "5"}, CallPhase.DISCLOSE_EXIT),
+        ("emergency_cleared", {"emergency_suspected": True}, CallPhase.EMERGENCY_EXIT),
+        # The realistic one: a caller released on a legit read who then talks scammy.
+        # `_is_real_person` is recomputed every evaluation and the scam score only
+        # accumulates, so the read that released them stops holding.
+        (
+            "legit_read_stops_qualifying",
+            {"triage": TriageClass.LEGIT_BUSINESS, "triage_confidence": 0.6},
+            CallPhase.DISCLOSE_EXIT,
+        ),
+    ]
+
+    @pytest.mark.parametrize(
+        ("name", "trigger", "exit_phase"), _EXIT_THEN_FADE, ids=[c[0] for c in _EXIT_THEN_FADE]
+    )
+    def test_a_verdict_cannot_un_commit_a_call_that_already_exited(
+        self, name: str, trigger: dict[str, object], exit_phase: CallPhase
+    ) -> None:
+        sm = machine(phase=CallPhase.STALL)
+        sm.advance(scam_ctx(**trigger))
+        assert sm.phase is exit_phase, f"{name}: setup did not reach the exit"
+        reason_before = sm.end_reason
+
+        # The verdict lands one evaluation later, with the releasing signal gone.
+        sm.advance(scam_ctx(watchdog_killed=True))
+        assert sm.phase is exit_phase, (
+            f"{name}: a watchdog verdict pulled the call out of an exit it had "
+            "already committed to — the fixed script it owed the caller would "
+            "never be said"
+        )
+        assert sm.end_reason is reason_before
+
+    def test_but_it_still_kills_a_call_that_is_actually_baiting(self) -> None:
+        """The carve-out must not be so wide that the watchdog stops working."""
+        sm = machine(phase=CallPhase.STALL)
+        sm.advance(scam_ctx(watchdog_killed=True))
+        assert sm.phase is CallPhase.TERMINATE
+        assert sm.end_reason is EndReason.WATCHDOG_KILL
+        assert sm.history[-1].trigger is Trigger.WATCHDOG_KILL
+
     def test_spend_cap_terminates(self) -> None:
         sm = machine(phase=CallPhase.STALL)
         sm.advance(scam_ctx(spend_exceeded=True))
