@@ -56,8 +56,9 @@ check `ant auth status` before debugging anything else, and unset the variable r
 than blanking it.
 
 Several more variables reach the wire without touching a credential, and they are easy
-to miss when trying to keep a process *off* the network — all of them matter to the
-offline-test guard Phase 3 builds. **`ANTHROPIC_BASE_URL`** redirects every request;
+to miss when trying to keep a process *off* the network. All of them matter to the
+offline-test guard in [`tests/conftest.py`](../tests/conftest.py), which clears or pins
+every one of them. **`ANTHROPIC_BASE_URL`** redirects every request;
 note that *clearing* it does not pin the destination, because base-url precedence runs
 constructor argument → this variable → the profile's own `resolved_base_url`, so an
 on-disk profile decides once the variable is gone. **`HTTP_PROXY` / `HTTPS_PROXY` /

@@ -1892,3 +1892,134 @@ which is where an owner working the active plan will find them.
   the monitor that produces one.
 - **Verification (final tree):** 982 passed / 16 skipped; textloop dry exit 0;
   `ruff check .` clean.
+- **Green on main:** run
+  [33032632910](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/33032632910)
+  (commit `a1a53f6`).
+
+### T3.2 — The offline-test guard
+
+- **Scope:** `tests/conftest.py` (the guard), `tests/test_offline_guard.py`
+  (new — the guard's own tests), `README.md`, `docs/secrets.md`,
+  `docs/roadmap.md`. Sequenced before `monitor.py` deliberately: the roadmap
+  makes "monitor tests must run with no key and no network" a Phase 3
+  requirement with an exit criterion, and a gate written after the code it
+  guards is a gate nobody ever watched fail. Same reason CI landed at T1.1.
+- **Four layers**, because the review demonstrated a live escape past each one
+  alone: poisoned credentials for every variable the SDK resolves one from; a
+  *pinned* base URL and cleared proxy variables; sockets refused except to
+  declared local service ports; and the SDK's HTTP layer refusing to run.
+- **Rule 1 — the review found a hole in the guard that let a test open real
+  off-box TCP.** Both adversaries demonstrated rather than argued, which is what
+  made this round worth the cost. In severity order:
+  - **A `bytes` host walked straight through.** `_is_loopback` returned True for
+    any non-`str` host, meaning to wave through `AF_UNIX` paths — but CPython
+    accepts a `bytes` host for ordinary TCP, so `connect((b"1.1.1.1", 80))`
+    **succeeded**, real off-box. The root cause was policy, not a typo: the
+    helper guessed the address family from the argument's *shape* and failed
+    **open** on anything it did not recognise. It now keys on the socket's own
+    `family`, parses with `ipaddress`, and fails **closed**. The same rewrite
+    fixed two silent errors in the same predicate — `127.evil.example.com` was
+    *accepted* by a string prefix test, and `::ffff:127.0.0.1` and `LOCALHOST`
+    were *rejected*, which would have failed the migration legs with the guard's
+    error rather than a connection error.
+  - **A zero-layer composite neither adversary reported alone.** Layer 4 patched
+    `Anthropic`/`AsyncAnthropic`; `AnthropicBedrock` and `AnthropicVertex`
+    inherit from neither, read their *own* base URLs, and ignore the poisoned
+    credentials. With `ANTHROPIC_BEDROCK_BASE_URL` pointed at a loopback
+    forwarder, layers 1, 2 and 4 all no-op and layer 3's all-loopback carve-out
+    waves it through — no layer standing. Fixed by patching
+    `SyncAPIClient`/`AsyncAPIClient`, the bases every variant inherits, which is
+    *fewer* lines than the leaf-class loop it replaced, and by adding the variant
+    base URLs to the cleared set.
+  - **The socket rule was wider than the spec it implements.** The roadmap says
+    "loopback permitted only on the declared Postgres port"; the implementation
+    allowed all loopback, which put the pinned base URL inside the guard's own
+    carve-out. Amending the spec to match a weaker implementation, inside the
+    task that implements it, is exactly what this gate exists to catch — so the
+    rule was narrowed instead, to a static port set. Static because sourcing it
+    from `MIGRATIONS_TEST_DATABASE_URL` would let the environment being guarded
+    against widen the guard. The migration test that dials `127.0.0.1:1` needed
+    no rework: an undeclared *loopback* port now raises `ConnectionRefusedError`
+    rather than `RuntimeError`, so `python -m ssscammers.db`'s `except OSError`
+    still exits 1 — and the test got stronger, since it now proves the guard
+    refuses the port rather than proving the OS does.
+  - **The guard had no test, and its absence was invisible.** A reviewer removed
+    `autouse=True` from both fixtures and the full suite stayed green with an
+    identical tally — the false green the red-proof procedure above calls the
+    dangerous one. Every escape found in this review was found by a probe that
+    was then deleted; none was a standing regression. `tests/test_offline_guard.py`
+    is the durable form, and seed 1 below is the proof it would have caught the
+    `bytes` escape itself.
+  - **Layer 4 refused `httpx.MockTransport`** — the SDK's own supported offline
+    seam, which opens no socket, and the one a monitor test is most likely to
+    reach for. Its error text asserted "a test tried to call the real Anthropic
+    API", which in that case is simply false. The refusal stays unconditional and
+    the text now says *HTTP layer* and names the sanctioned seam.
+- **The one place the adversaries disagreed, and how it was resolved.** The
+  roadmap specified an opt-in ("unless a test opts in"). A wanted it built:
+  greppable, countable in review. B wanted it rejected: a marker is trivially
+  reached for, and the case it serves is already served better by injecting
+  `RecordedAnthropicClient` through `ClaudeBrain(client=...)`, which needs no
+  HTTP stack. **B's position taken** — an escape hatch built before a
+  demonstrated need is one that gets used before there is a demonstrated need.
+  B's alternative, a `MockTransport` exemption, was *also* deferred on B's own
+  reasoning: detecting it needs two private `httpx` attributes, so it would break
+  silently on a dependency upgrade, which is the failure class this task exists
+  to close. Both positions and the deferral condition are recorded in the
+  fixture's docstring, and `roadmap.md`'s clause is amended with the reason.
+- **Also fixed:** a dead `session_mocker` parameter that survived only because
+  pytest strips defaulted parameters — dropping the default would have errored
+  every test in the suite, and `pytest-mock` is not even a dependency; a
+  docstring that stated the *opposite* of the implemented contract, left over
+  from the reverted `__init__` design; an `ImportError` branch documented as the
+  "`[dev]`-only install shape", which does not exist because `anthropic` is a
+  base dependency; and a missing `ANTHROPIC_FOUNDRY_API_KEY` /
+  `ANTHROPIC_WEBHOOK_SIGNING_KEY`.
+- **`pytest-socket` was considered and rejected** (CLAUDE.md's search-before-writing
+  rule): it implements layer 3 only, has no port-scoped allow-rule, and cannot
+  express layers 1, 2 or 4. Recorded in the module docstring.
+- **Red-proof (five seeded regressions, `.venv/bin/python`).** Under the
+  cache-clearing procedure:
+  - `autouse` dropped from `_offline` — **previously left the suite green**; now
+    **8 failed / 1005 passed**.
+  - `autouse` dropped from the SDK layer: **6 failed / 1007 passed**.
+  - Layer 4 reverted to the two leaf classes: **2 failed** — both Bedrock and
+    Vertex.
+  - The fail-open host check restored: **1 failed** — the `bytes` escape.
+  - The socket rule widened back to all-loopback: **1 failed**.
+  - Restored: **1013 passed / 16 skipped**.
+- **Pushed red-proof — and the first two attempts were false reds I nearly
+  banked.** The exit criterion requires the seeded regression pushed, red, with
+  the run URL recorded, and run *with `HTTPS_PROXY` set*. Recording what went
+  wrong, because the failure mode is the one this procedure exists to catch and
+  it is not obvious:
+  - **Attempt 1** ([33033796344](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/33033796344)):
+    red, and worthless. Setting the proxy at *workflow* level killed every job at
+    `actions/checkout`, before a single test ran. Eight red jobs and not one of
+    them evidence.
+  - **Attempt 2** ([33033885886](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/33033885886)):
+    also worthless. `git checkout` on the workflow reverted it to HEAD — which
+    was *already* the seeded commit — so the step-scoped fix landed on top of the
+    workflow-level proxy instead of replacing it.
+  - **The tell, both times, was structural rather than in the logs:** `ruff` and
+    `textloop` were failing. Disabling a pytest fixture cannot make a lint job
+    fail. A red run whose failures exceed the causal reach of the seed is not
+    evidence — and this is exactly where that is easy to miss, because a
+    red-proof is the one procedure you enter *wanting* red.
+  - **Attempt 3, the real one**
+    ([33033946268](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/33033946268)):
+    all four `tests` legs red with **10 failed**, every failure in
+    `tests/test_offline_guard.py`; `ruff`, `textloop` and both `migration runner`
+    legs **green**. Two failures carry the weight: `test_no_proxy_survives`
+    proves the proxy really was set on the step, so the guard was proven in the
+    false-pass configuration; and `test_a_live_connection_off_box_actually_raises`
+    means that without the guard the runner genuinely reached off-box. Branch
+    deleted; main never contained the regression.
+- **A process error worth recording.** Stashing the work onto the throwaway
+  branch put the real change and the seed in the same commits, so deleting the
+  branch deleted T3.2 as well. Recovered from the dangling commit and un-seeded.
+  The right order is commit the work to main *first*, then branch for the seed —
+  the red-proof procedure above says main must never contain the regression, and
+  says nothing about the branch containing the only copy of the work.
+- **Verification (final tree):** 1013 passed / 16 skipped; textloop dry exit 0;
+  `ruff check .` clean; `.github/workflows/ci.yml` unmodified.

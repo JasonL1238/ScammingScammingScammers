@@ -355,10 +355,23 @@ timed-out turn are indistinguishable, so the miss rate stops being measurable.
     closes that *instance*; `/etc/hosts` pointing `api.anthropic.com` at 127.0.0.1, an
     on-disk profile's `resolved_base_url`, an ssh tunnel, or `socat` are the same hole
     wearing different clothes, and enumerating instances is unbounded. So: make the
-    allow-rule **destination-specific** — loopback permitted only on the declared
-    Postgres port — and treat the socket layer as defence in depth behind a second seam
-    that does express the property: **an autouse fixture that makes constructing a real
-    `anthropic` client raise unless a test opts in.**
+    allow-rule **destination-specific** — loopback permitted only on declared local
+    service ports — and treat the socket layer as defence in depth behind a second seam
+    that does express the property: **an autouse fixture that makes a real `anthropic`
+    client's HTTP layer raise.**
+
+    *(Amended at T3.2, which built it. This bullet said "makes **constructing** a real
+    client raise unless a test opts in". Both halves were wrong. Refusing construction
+    failed six honest tests that only inspect the request shape or walk the pipeline
+    builder — construction opens no socket, and production builds a client during call
+    setup — so the refusal moved to `post`/`request` on `SyncAPIClient`/`AsyncAPIClient`,
+    the bases every variant inherits, which also closes the Bedrock/Vertex gap the next
+    bullet names. And the opt-in was rejected: a marker is trivially reached for, and the
+    case it would serve is already served better by injecting `RecordedAnthropicClient`
+    through `ClaudeBrain(client=...)`, which needs no HTTP stack at all. The declared
+    ports are `5432` and `1` — port 1 because a migration test dials it to assert a
+    refusal and the pinned base URL points there, and because binding below 1024 needs
+    root, so allowing it grants nothing a stray dev proxy could occupy.)*
   - *Also name these, because a guard that misses them reports a false pass.* Link-local
     counts as non-loopback (`169.254.169.254` is the cloud metadata endpoint the
     Bedrock/Vertex client variants reach for, and none of those consults

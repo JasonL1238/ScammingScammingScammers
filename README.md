@@ -60,7 +60,12 @@ pip install -e ".[dev]"
 pytest
 ```
 
-The default test suite needs **no API keys and no network** — it covers the
+The default test suite needs **no API keys and no network**, and that is enforced
+rather than assumed: [`tests/conftest.py`](tests/conftest.py) poisons every credential
+the Anthropic SDK reads, pins its base URL, clears the proxy variables, refuses sockets
+to anything but declared local service ports, and makes the SDK's HTTP layer raise.
+[`tests/test_offline_guard.py`](tests/test_offline_guard.py) checks the guard itself. It
+covers the
 safety-critical layer (fiction-pack invariants, the pre-TTS output filter, the call
 state machine, triage, the conversation driver, and the webhook routing). Install the
 realtime stack with `pip install -e ".[media,dev]"` when you're ready to run an actual
