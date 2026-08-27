@@ -2023,3 +2023,6 @@ which is where an owner working the active plan will find them.
   says nothing about the branch containing the only copy of the work.
 - **Verification (final tree):** 1013 passed / 16 skipped; textloop dry exit 0;
   `ruff check .` clean; `.github/workflows/ci.yml` unmodified.
+- **Green on main:** run
+  [33034122366](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/33034122366)
+  (commit `284bd7b`). Throwaway branch deleted from the remote.
