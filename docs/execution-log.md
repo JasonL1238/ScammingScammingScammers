@@ -2177,3 +2177,6 @@ which is where an owner working the active plan will find them.
   would wrap an uncontended acquire, never suspend, and survive.
 - **Verification (final tree):** 1067 passed / 16 skipped; `ruff check .` clean;
   textloop `--all-scripts --dry` exit 0; 37/37 mutants red.
+- **Green on main:** run
+  [33155569612](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/33155569612)
+  (commit `c841636`) — all four `tests` legs, `textloop`, `lint` and `migrations`.
