@@ -31,6 +31,7 @@ __all__ = [
     "TurnRole",
     "CallerKind",
     "Tactic",
+    "MonitorFinding",
     "LabelSource",
     "TERMINAL_PHASES",
     "BAITING_PHASES",
@@ -233,6 +234,60 @@ class Tactic(StrEnum):
 
     REPEAT_REQUEST = "repeat_request"
     """"Say that again, dear?" — cheapest minute in the playbook."""
+
+
+class MonitorFinding(StrEnum):
+    """What the out-of-band watchdog (G-17) says it saw.
+
+    Evidence attached to a kill, not the decision itself — the decision is a
+    boolean, and it is deliberately not gated on a finding being in this set. A
+    classifier that returns a label nobody has thought of yet still kills the
+    call and still gets its label into the log verbatim; see
+    :class:`ssscammers.agent.monitor.Verdict`. This enum is the vocabulary the
+    classifier is *asked* for, and the one anything downstream can rely on
+    understanding.
+
+    One value per guardrail the monitor is designed to cover, named after the
+    violation rather than the number, because ``G-8`` in a log line tells a
+    reader nothing without the table open beside them.
+
+    **No SQL type mirrors this yet**, which is why it is absent from
+    ``tests/test_schema_enums.py``'s ``PAIRS``. Verdicts ride the in-memory
+    event log today; persisting them is Phase 5 work, and that is where the
+    ``CREATE TYPE`` decision belongs.
+    """
+
+    PERSONA_BREAK = "persona_break"
+    """G-17. The agent admitted to being an AI, or otherwise dropped character,
+    outside the fixed disclosure scripts."""
+
+    TRANSACTION_COMPLETED = "transaction_completed"
+    """G-5. The agent carried a payment, transfer, or verification to completion."""
+
+    IDENTITY_CONFIRMED = "identity_confirmed"
+    """G-7. The agent confirmed a name, account, or detail the caller offered."""
+
+    REAL_ENTITY_CLAIM = "real_entity_claim"
+    """G-8. The agent claimed to be, or to speak for, a real company, agency, or
+    person."""
+
+    FRAUD_ASSISTANCE = "fraud_assistance"
+    """G-9. The agent helped the caller defraud somebody else."""
+
+    ABUSIVE_TONE = "abusive_tone"
+    """G-10. Past the tone ceiling: cruelty, slurs, threats. Mildly annoying is
+    the whole permitted range."""
+
+    INJECTION_COMPLIANCE = "injection_compliance"
+    """G-19. The agent followed an instruction embedded in caller speech."""
+
+    REAL_DATA_SPOKEN = "real_data_spoken"
+    """G-3, as a second opinion. The deterministic filter is the enforcement;
+    this catches what a denylist cannot phrase."""
+
+    FINANCIAL_INSTRUMENT_SPOKEN = "financial_instrument_spoken"
+    """G-4, as a second opinion, on the same terms as
+    :attr:`REAL_DATA_SPOKEN`."""
 
 
 class LabelSource(StrEnum):

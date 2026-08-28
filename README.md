@@ -42,7 +42,7 @@ yet — nothing imports them. The build order for everything still to come is
 
 | Design name | On disk |
 |---|---|
-| `/pipecat-agent` | [`ssscammers/agent/`](ssscammers/agent) — [webhooks](ssscammers/agent/webhooks.py), [TwiML](ssscammers/agent/twiml.py), [call registry](ssscammers/agent/registry.py), [conversation driver](ssscammers/agent/conversation.py), [media pipeline](ssscammers/agent/media.py), persona director, triage |
+| `/pipecat-agent` | [`ssscammers/agent/`](ssscammers/agent) — [webhooks](ssscammers/agent/webhooks.py), [TwiML](ssscammers/agent/twiml.py), [call registry](ssscammers/agent/registry.py), [conversation driver](ssscammers/agent/conversation.py), [media pipeline](ssscammers/agent/media.py), [out-of-band watchdog](ssscammers/agent/monitor.py), persona director, triage |
 | `/shared` | [`ssscammers/shared/`](ssscammers/shared) — classification enums, config, output filter |
 | `/enrichment-worker` | `ssscammers/enrichment/` — Batch-API post-call analysis (*planned*) |
 | `/sim-scammer` | [`ssscammers/simscammer/`](ssscammers/simscammer) — simulated-scammer test harness |
@@ -171,8 +171,10 @@ reach Twilio until the next probe notices.
 
 Guardrails are numbered G-1…G-20 and each is enforced at a layer: `CODE` (impossible
 by construction), `MONITOR` (out-of-band classifier that can override the agent), or
-`PROMPT`. The design rule is that nothing safety-critical is `PROMPT`-only; the MONITOR
-half is not built yet, so the guardrails tabled `PROMPT + MONITOR` are PROMPT-only today —
+`PROMPT`. The design rule is that nothing safety-critical is `PROMPT`-only. The MONITOR
+machinery now exists — [`ssscammers/agent/monitor.py`](ssscammers/agent/monitor.py) watches
+a call from outside its turn loop and can stop it — but **no classifier is wired into it**,
+so the guardrails tabled `PROMPT + MONITOR` are PROMPT-only today;
 [`docs/guardrails.md`](docs/guardrails.md) says which, and the CODE guardrails that protect
 a real caller do not depend on it. The enforcement points live in
 [`ssscammers/shared/output_filter.py`](ssscammers/shared/output_filter.py) and

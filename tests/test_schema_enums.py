@@ -277,7 +277,15 @@ def test_every_python_enum_is_mirrored() -> None:
 
     from ssscammers.shared import enums as enums_module
 
-    not_persisted: set[type] = set()
+    not_persisted: set[type] = {
+        # Watchdog findings ride the in-memory event log today: `request_kill` takes
+        # them as free strings and the payload reaches `LoggingEventSink`, never a
+        # table. Persisting a verdict is Phase 5 work, and the `CREATE TYPE` belongs
+        # in the migration that adds the column it types — not ahead of it, where an
+        # append-only enum would be pinned before anything had exercised its values.
+        # See `MonitorFinding`'s own docstring.
+        enums_module.MonitorFinding,
+    }
     strenums = {
         obj
         for _, obj in inspect.getmembers(enums_module, inspect.isclass)

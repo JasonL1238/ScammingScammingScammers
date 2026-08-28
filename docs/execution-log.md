@@ -2026,3 +2026,154 @@ which is where an owner working the active plan will find them.
 - **Green on main:** run
   [33034122366](https://github.com/JasonL1238/ScammingScammingScammers/actions/runs/33034122366)
   (commit `284bd7b`). Throwaway branch deleted from the remote.
+
+### T3.3 — The out-of-band watchdog
+
+- **Scope:** new `ssscammers/agent/monitor.py` (the tap, the excerpt, the worker, the
+  pool) and `tests/test_monitor.py` (54 tests); `ssscammers/shared/enums.py` gains
+  `MonitorFinding`; `tests/test_schema_enums.py` records the enum→SQL deferral in its
+  `not_persisted` set; `tests/helpers.py` absorbs `build`, `drain`, `spoken`,
+  `ScriptedBrain` and `RecordingSink` from `tests/test_conversation.py`, and
+  `tests/test_replay.py` drops its duplicate `RecordingSink`; `docs/guardrails.md`,
+  `docs/roadmap.md` and `README.md`.
+
+  **What did *not* move, deliberately.** No classifier, and nothing constructs a
+  `MonitorPool`, so **no live call is watched by anything**. `guardrails.md`'s preamble
+  still says the `PROMPT + MONITOR` guardrails are PROMPT-only in the running system,
+  because a mechanism with nothing behind it is not a control. What changed is that
+  closing each of them is now a classifier and a wiring change rather than a component
+  that does not exist.
+- **The design claim.** The watchdog is out of band in the strongest sense available:
+  it never runs inside a turn, never holds a lock a turn holds, and cannot delay a
+  sentence of audio. The tap *is* the event sink — `CallMonitor` wraps whatever sink the
+  conversation had — so nothing in `conversation.py` knows the module exists and a clean
+  monitor leaves the stream byte-identical. Only a model-generated `agent_turn` starts a
+  classification; caller speech is context, because the excerpt that judges a reply
+  already contains the speech that provoked it.
+- **Rule 1: two rounds, four adversary runs, two refutation rounds, 27 findings.**
+  Round one produced 14 (A: 4 correctness, B: 10 design/verification); the fixes
+  cascaded far enough to require the gate to re-run, and round two produced 13 more on
+  the cascade alone, two of which were the same defect seen from both angles. Every one
+  was fixed. Two adversary runs died on infrastructure (one stalled, one lost to the
+  machine sleeping) and were resumed rather than substituted for.
+
+  The defects that mattered, in severity order:
+  - **The turn being judged could fall out of the excerpt that judged it.** The buffer
+    was one bounded deque of "the last N turns", so a model turn waiting on a slow
+    classifier could be pushed out by the caller's replies — and the request that turn
+    *raised* was then spent judging caller speech alone. A real model call, a real
+    permit, a clean verdict reached by reading nothing the persona said. The excerpt is
+    now assembled by priority rather than recency: unjudged model turns first, then as
+    much recent context as the remaining budget allows, since the caller's words cannot
+    breach a guardrail and the persona's can.
+  - **A miss was silently discarded whenever the monitor stopped.** `_missed` was read
+    only at the next take, so a call ending first threw the count away unread — and
+    `_missed` only grows while the classifier is behind, which makes the modal ending
+    here (a scammer hanging up the moment the persona breaks) exactly the case that lost
+    it. Quantified by an adversary at 155/200 simulated calls and 1,480 unreported
+    turns. It now reports through `_stop()`, the one funnel every termination passes.
+  - **`aclose()` swallowed a cancellation aimed at its own caller.**
+    `suppress(CancelledError)` around `await self._task` cannot tell "the worker I just
+    cancelled" from "somebody cancelled *me*", and cancelling a task then awaiting it
+    always parks for a loop iteration — so every close of a live worker opened the
+    window. A supervisor shutting a call down got a call reporting itself as finished
+    normally. Now `asyncio.wait({task})`, which never re-raises the awaited task's
+    cancellation and lets an outer one through.
+  - **A failed `open()` poisoned the pool permanently.** `self._loop` was assigned
+    before the steps that can raise, so an attempt that created no task and contended no
+    semaphore still claimed the loop it failed on — and the next entirely correct
+    `open()`, in a live loop, was refused with a message that was simply false. This is
+    the round-one defect (`conversation.events` installed before `start()`) reinstated
+    one field over, in the method whose docstring promises "a failure changes nothing".
+  - **A classifier's own `TimeoutError` was reported as the monitor's deadline
+    expiring.** `socket.timeout` *is* `TimeoutError` and `OSError(ETIMEDOUT)`
+    instantiates as one, so any transport timeout inside a real classifier produced
+    "classifier exceeded 4.0s" about a deadline that never fired, with the traceback
+    dropped by `logger.warning` — and would send an operator to raise `timeout_seconds`
+    against it. Now `asyncio.timeout(...) as deadline` and a branch on
+    `deadline.expired()`. This is the same misattribution class as the permit hoist
+    below, one clause later in the same function.
+  - **The permit wait was inside the classifier's blame.** A cross-loop or otherwise
+    failed acquire was logged as "classifier failed" about a classifier never entered.
+    The acquire moved outside `_classify`'s `try` — a fix neither adversary proposed in
+    round one and which one produced during the refutation round, closing two separate
+    findings at once.
+  - **The fail-*off* path left inconsistent state.** The `except Exception` around the
+    worker loop retired the watchdog without setting `_stopped`, so `observe` kept
+    recording, evicting and counting misses on the turn path for the rest of the call
+    with nothing left to read any of it. It now routes through `_stop()`.
+  - **Smaller, all real:** a truncated *fixed script* logged "the tail of the persona's
+    own words was not judged" about a turn never judged by design — at any tuned-down
+    cap that fires on every disclosed call, which is how the one line standing between
+    an operator and a half-read persona becomes the line they ignore. Truncating a model
+    turn logged nothing at all. `aclose()` nulled the task handle before cancelling,
+    making `active` false by assignment. Two `except asyncio.CancelledError: raise`
+    clauses were inert by construction (`CancelledError` derives from `BaseException`).
+    The `while not self._stopped:` condition could never end the loop, and
+    `_take_request`'s empty-queue guard plus its handler in the worker were the same
+    unreachable check written twice — now one guard that raises loudly, because the
+    alternative to skipping is the excerpt defect above.
+- **Two claims I wrote that the review falsified.** Recorded because they are the
+  reason the gate exists.
+  - `guardrails.md`'s G-17 row said fixed scripts are never a trigger "*so* no verdict
+    can suppress a disclosure". Non-sequitur: not classifying a script does nothing
+    about a kill latched on an *earlier* turn. What actually stops that is
+    `request_kill` refusing once the phase is terminal, plus the state machine ranking
+    the watchdog below every real-person exit. The doc named the weakest of the three
+    mechanisms as its proof — the sentence a refactor would preserve while deleting the
+    one that holds.
+  - `roadmap.md` said the scripted-trigger rule has "no observable effect in production
+    today, because `call_ended` follows one event later". The premise is right and the
+    inference was not: `_execute` *suspends* at `yield Say(...)` between the two emits,
+    so a consumer that yields there hands the worker a slot to classify the disclosure
+    in. One adversary demonstrated it with an inserted `await`; the other refuted the
+    demonstration (production's `push_frame` completes without suspending on the default
+    path) but not the correction. The honest claim is "not load-bearing *on today's
+    stack*", which rests on third-party scheduling details under a `pipecat-ai>=1.7` pin
+    with no ceiling.
+- **A methodological finding worth more than any single defect.** Round one's design
+  adversary ran a 46-mutant sweep; 18 survived green and became findings. It did not
+  find the excerpt-eviction defect — and two of its own mutants were *inside that
+  function*. Its explanation, unprompted: mutation testing perturbs code that exists and
+  there is no mutant that **adds** a branch, so it is blind by construction to the whole
+  omission class. It read the inert trigger accounting as dead defensive code; the other
+  adversary asked what the accounting should have been doing and found the module
+  tracked *how many* triggers were pending but never *which*.
+
+  The follow-up sharpened it further. Round two's correctness adversary validated the
+  new excerpt logic with a randomized property harness — 400 rounds, five invariants,
+  non-vacuity shown by kill rates against three mutants. Asked whether that closes the
+  gap, the design adversary pointed out that every invariant reads `monitor._missed`,
+  the in-memory counter, and none reads the log — so a build that maintains the counter
+  perfectly and never reports it passes all 400 rounds. That is the `_missed`-discarded
+  defect exactly: invisible to the harness built to validate the fix beside it. Mutation
+  is blind to omission; properties are blind to whichever boundary they decline to read.
+  Neither replaces reading the contract.
+- **Findings that were refuted rather than fixed**, recorded so the list is not read as
+  unanimous: the excerpt-eviction repro as originally filed (an all-caller feed) is a
+  test-only path, since every non-terminal `handle_caller_turn` sets
+  `consult_model=True`; the chars-per-token argument for agent truncation being
+  reachable (the project's own measurement puts the wordiest persona at ~273 output
+  tokens); "the `isinstance` assertion contributes nothing" (circular — deleting it and
+  showing the mutant survives proves it was the thing catching it); and the claim that
+  the scripted-trigger rule provably fires in production.
+- **Red-proof: 37 seeded mutants, every one red, none vacuous.** 26 after round one and
+  11 after round two, each pointed at the test that must catch it. Four went green on
+  first run and were themselves defects in the tests: the byte-identical-stream test
+  could not see a tap that *awaited* the classifier (the conversation runs on a
+  simulated clock, so real blocking moved no timestamp); the `open()` reorder was masked
+  by the loop check added beside it; the context buffer's `maxlen` lost its behavioural
+  signature once `_excerpt` capped its own output; and a fail-open test passed against a
+  watchdog that died on its first bad turn, because it never checked the *next* turn was
+  still watched.
+- **One test was replaced for flakiness, not correctness.** The
+  semaphore-outside-the-deadline property was pinned with real durations — a 50 ms
+  classifier against a 120 ms deadline — and measured at 4 failures in 15 runs under
+  load, with the classifier's true span reaching 211 ms. It now pins the *ordering* with
+  no magnitudes: the only permit is held from outside, the deadline is short enough that
+  any suspension exceeds it, and the classifier never suspends, so as shipped no
+  deadline can expire however small. An assertion that the classifier has *not* answered
+  while the permit is held proves the worker is genuinely queued — without it the mutant
+  would wrap an uncontended acquire, never suspend, and survive.
+- **Verification (final tree):** 1067 passed / 16 skipped; `ruff check .` clean;
+  textloop `--all-scripts --dry` exit 0; 37/37 mutants red.

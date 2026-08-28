@@ -11,16 +11,24 @@ lives. The layers mean specific things:
 nicely not to do something is a mitigation, not a control, and the callers here are
 adversarial humans who will spend twenty minutes trying to talk it out of the instruction.
 
-**Today the rule is not fully met, and no row below should be read as if it were.** There
-is no MONITOR mechanism in the running system: the only one designed is G-17's model-backed
-watchdog, and G-17 is partial — the deterministic half is in the output filter, the
-model-backed half is pending. So wherever MONITOR appears it is *planned*, and:
+**Today the rule is not fully met, and no row below should be read as if it were.** The
+MONITOR *mechanism* now exists — [`monitor.py`](../ssscammers/agent/monitor.py) taps the
+event stream, classifies out of band, and turns a verdict into a `TERMINATE` through the
+enforcement seam in [`conversation.py`](../ssscammers/agent/conversation.py) — but **no
+classifier is implemented and nothing constructs a `MonitorPool`**, so no live call is
+watched by anything. A mechanism with no classifier behind it is not a control. So
+wherever MONITOR appears it is still *planned* in the sense that matters, and:
 
 - Every guardrail tabled `PROMPT + MONITOR` — G-5, G-7, G-8, G-9, G-10, G-19 — is
-  **PROMPT-only in the running system**.
+  **PROMPT-only in the running system**. What changed is that closing each of them is now
+  a classifier and a wiring change rather than a component that does not exist.
 - G-3 and G-4 are **CODE today**, which is the half that matters: the pre-TTS filter is
   deterministic and blocks unilaterally. Their MONITOR half is planned, not built, so there
   is no out-of-band second opinion on either.
+- A verdict arrives *after* the turn it judges, by design — the monitor is never awaited
+  from the turn path, so what it stops is the next turn, not the one already spoken. Any
+  guardrail whose violation must never be *uttered* therefore cannot be a MONITOR
+  guardrail; that is why G-3 and G-4 are CODE.
 
 The guardrails that protect a real caller are CODE: G-1, G-11, G-12, G-13, G-14, G-16 are
 built and none depends on the watchdog. G-2 is CODE and monitored — an unfetchable
@@ -50,7 +58,7 @@ design is settled but the code is not written.
 | G-14 | Hard call cap, enforced by timer not by model | CODE | **built** | `hard_cap_seconds` in the state machine |
 | G-15 | Concurrency, daily minutes, and spend caps | CODE | **built** | Concurrency enforced by [`registry.py`](../ssscammers/agent/registry.py); daily minutes, spend, and repeat-caller counters by [`daily_ledger.py`](../ssscammers/agent/daily_ledger.py), persisted to disk with atomic writes (the compose file maps its state directory to a named volume). Every one of them routes overflow to voicemail, never a rejection |
 | G-16 | Dead-air hangup | CODE | **built** | `dead_air_seconds` |
-| G-17 | Persona-break watchdog can stop the call | MONITOR | partial | Deterministic half built into the filter; the model-backed half is pending |
+| G-17 | Persona-break watchdog can stop the call | MONITOR | partial | Deterministic half built into the filter. The out-of-band half is now **mechanism-complete and classifier-less**: [`monitor.py`](../ssscammers/agent/monitor.py) consumes `caller_turn`/`agent_turn` from an in-process tap on the event sink, classifies a bounded excerpt under a hard timeout and a shared concurrency budget — at most one request per model turn, and fewer when a backlog coalesces several into one — fails open on every failure mode, and hands a kill to `Conversation.request_kill`. Fixed scripts never *trigger* a classification, but that is a cost rule and not the reason a verdict cannot suppress a disclosure: what stops that is `request_kill` refusing once the phase is terminal, plus the state machine ranking a watchdog kill below every real-person exit (G-11/G-12's rows). What is missing is the `Classifier` implementation and the application wiring that would construct a pool |
 | G-18 | Truthful AI disclosure only on code-gated triggers | PROMPT + CODE | **built** | Persona-break patterns blocked except in the exit phases |
 | G-19 | Caller speech is data, never instructions | PROMPT + MONITOR | partial | [`core_rules.md`](../playbooks/core_rules.md); injection scripts in the eval set |
 | G-20 | Kill switch for any live call and the whole system | CODE | partial | `CallRegistry.enabled` stops new calls in-process (they get voicemail, never a dropped call); persistence via `settings.system.enabled` and dashboard control pending. Killing a call **already in flight** is now half-built: `Conversation.request_kill` ([`conversation.py`](../ssscammers/agent/conversation.py)) latches a kill that the next evaluation turns into `TERMINATE`/`EndReason.WATCHDOG_KILL`, stops the reply mid-stream, and refuses once the call has committed to an exit. What is missing is the operator-facing half — nothing maps a `call_sid` to a live `Conversation`, so there is no endpoint to press |
@@ -61,9 +69,13 @@ The pre-TTS filter **fails closed**: if the scan itself raises, the utterance is
 replaced with an in-character fumble rather than spoken unchecked. A crash must never
 become a leak.
 
-The model-backed watchdog is **designed to fail open** — if the classifier errors or times
-out, the deterministic verdict stands alone, because a flaky API must never stall a live
-call. It is not built yet (G-17), so today the deterministic verdict is the only verdict.
+The model-backed watchdog **fails open** — if the classifier errors, times out, or
+returns something that is not a verdict, the deterministic verdict stands alone, because a
+flaky API must never stall a live call. That polarity is now built and tested rather than
+merely designed: `tests/test_monitor.py` drives all four failure modes and requires the
+call to continue *and* the watchdog to keep watching the turns after the failure — failing
+open, not failing off. No classifier exists to fail, so today the deterministic verdict is
+still the only verdict.
 
 ## Why over-blocking is cheap but not free
 

@@ -13,7 +13,7 @@ replay at all: it turns a diverged run green.
 from __future__ import annotations
 
 import pytest
-from helpers import SimulatedClock, make_director
+from helpers import RecordingSink, SimulatedClock, make_director
 
 from ssscammers.agent.conversation import CallEvent, Conversation, build_conversation
 from ssscammers.agent.llm import ClaudeBrain, Turn
@@ -29,14 +29,6 @@ from ssscammers.simscammer.replay import (
     ReplayBrain,
     describe_request,
 )
-
-
-class RecordingSink:
-    def __init__(self) -> None:
-        self.events: list[CallEvent] = []
-
-    async def emit(self, event: CallEvent) -> None:
-        self.events.append(event)
 
 
 def recording(*turns: RecordedTurn, **kwargs: object) -> CallRecording:

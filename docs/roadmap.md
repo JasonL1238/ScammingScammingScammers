@@ -287,7 +287,21 @@ does not wait for persistence.
 **Key moves.**
 - New `ssscammers/agent/monitor.py`: an out-of-band, model-backed watchdog consuming
   `agent_turn`/`caller_turn` events from an in-process tap — never awaited in the
-  per-sentence vet loop, so it adds zero latency to live audio.
+  per-sentence vet loop, so it adds zero latency to live audio. **Built at T3.3**, with
+  a fake classifier; the model-backed `Classifier` and the application wiring are the
+  next two tasks, and until both land nothing watches a live call. The tap is the event
+  sink itself (`CallMonitor` wraps whatever sink the conversation had), so nothing in
+  `conversation.py` knows the module exists and a clean monitor leaves the stream
+  byte-identical. Three refinements the plan did not anticipate, all recorded because
+  they narrow what the classifier is asked to do: (a) only a *model-generated* agent
+  turn triggers a classification — caller speech is context, since the excerpt that
+  judges a reply already contains the speech that provoked it, and triggering on both
+  would double the spend for nothing; (b) a backlog **coalesces** rather than queues,
+  which is not sampling — the merged excerpt still covers the turns behind it, and the
+  case where it stops covering them is logged; (c) the timeout, the semaphore wait, and
+  the per-turn character cap are three separate bounds and are documented as such,
+  because folding the queue wait into the deadline would make every classification fail
+  open exactly when the process is busiest.
 - Enforcement rides the already-built dead seam: the verdict sets
   `CallContext.watchdog_killed` in [`state_machine.py`](../ssscammers/agent/state_machine.py),
   consumed by `check_exits` at the existing 1s tick, terminating via
@@ -311,22 +325,46 @@ does not wait for persistence.
   G-17 — evaluated against Phase 2's machine-checked adversarial predicates.
 - The fixed-script carve-out is preserved: disclosure, victim warning, and 911 bypass
   the monitor as they bypass the filter — a fail-closed path over them would create a
-  call where the required disclosure is never said.
+  call where the required disclosure is never said. *(Amended at T3.3. The cost note
+  below worried that "skip anything `scripted=True`" would over-skip because the neutral
+  greeting carries that flag too. It was looking at the wrong channel: the greeting is
+  recorded as a scripted `Turn` in the transcript but `Conversation.open` emits only
+  `call_opened`, never an `agent_turn`, so it never reaches the tap at all. The three
+  fixed scripts are therefore exactly the set of scripted `agent_turn` events, and
+  "scripted turns are context, never a trigger" **is** the carve-out rather than a
+  superset of it. Two further corrections from T3.3's second review round, one of them
+  to a claim this note made itself. It said the rule "has no observable effect in
+  production today, because every plan that speaks a fixed script also sets
+  `hang_up=True`, so `call_ended` follows one event later". The premise is right and the
+  inference was not: `_execute` **suspends** at `yield Say(...)` between the two emits, so
+  a consumer that yields to the loop there hands the monitor a full scheduling slot to
+  classify the disclosure in. The terminal harness never yields (it drains the generator
+  in a comprehension); production's `perform_stream` awaits `push_frame`, which on the
+  default path completes without suspending — no registered handler, no observer, an
+  unbounded queue. So the rule is not load-bearing *on today's stack*, which is a much
+  weaker statement than "no observable effect" and rests on third-party details under a
+  `pipecat-ai>=1.7` pin with no ceiling. Second: the rule is **not** what keeps a verdict
+  off a disclosure either way. That is `request_kill` refusing once the phase is terminal,
+  plus the state machine's ordering from T3.1; a scripted turn being classified costs a
+  spent request and a log line, never a suppressed script. The guardrails table attributed
+  it to the trigger rule for one commit and now names the right mechanism.)*
 - In-flight `kill(call_sid)` injected through the same override channel — completing
   the "kill a call already in flight" pending piece of G-20.
 - `guardrails.md`'s MONITOR column updated honestly in the same commit; the
   verdict-enum-to-SQL decision deferred to Phase 5 with a written note (the Phase 1
-  runner already exists if a review cascade forces it early).
+  runner already exists if a review cascade forces it early). *(Done at T3.3, and the
+  note landed somewhere better than a doc: `shared/enums.py` gained `MonitorFinding`,
+  and `tests/test_schema_enums.py` already had a guard requiring every StrEnum in that
+  module to be either mirrored in SQL or listed in an explicit `not_persisted` set with
+  a comment. The deferral is written there, where a future migration author trips over
+  it.)*
 
 **Cost and testability constraints** *(added 2026-08-26)*. The monitor is the first
 component that spends model tokens on every turn of every call, so it is built cheap by
 construction: a small model and a **bounded excerpt** rather than the whole transcript.
-Fixed-script turns are not classified — note this is a *narrower* rule than "skip
-anything `scripted=True`", because the neutral greeting
-([`persona_director.py`](../ssscammers/agent/persona_director.py)'s
-`NEUTRAL_GREETING`, marked scripted where `Conversation.open` records it) also carries
-that flag, while the carve-out above names only disclosure, victim warning, and
-911. **Sampling is not an allowed economy** — a per-turn guardrail evaluated on a sample
+Fixed-script turns are not classified — and see the carve-out bullet above for why
+that rule turned out to be exactly the carve-out rather than a superset of it.
+**Sampling is not an allowed economy** — a per-turn guardrail evaluated on a sample
 is not equal safety, and under the fail-open polarity above an unsampled turn and a
 timed-out turn are indistinguishable, so the miss rate stops being measurable.
 
